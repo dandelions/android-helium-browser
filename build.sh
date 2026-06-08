@@ -14,7 +14,7 @@ mkdir -p chromium/src/out/Default; cd chromium
 gclient root; cd src
 git init
 git remote add origin $CHROMIUM_SOURCE
-git fetch --depth 2 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
+git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
 git checkout $VERSION
 export COMMIT=$(git show-ref -s $VERSION | head -n1)
 cat > ../.gclient <<EOF
@@ -45,7 +45,6 @@ replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
 replace "$SCRIPT_DIR/vanadium/patches" "vanadium" "helium"
 replace "$SCRIPT_DIR/vanadium/patches" ".helium.app" ".vanadium.app" # components
 git am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
-cp -a $SCRIPT_DIR/res/. chrome/android/java/res_helium_base/
 
 gclient sync -D --no-history --nohooks
 gclient runhooks
