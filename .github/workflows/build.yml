@@ -45,7 +45,7 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      # 🌟 核心修改 1：挂载 ccache 缓存目录（为免费服务器积攒革命本钱）
+      # 🌟 核心修改 1：挂载 ccache 缓存目录
       - name: Setup Compiler Cache
         if: ${{ matrix.runner == 'ubuntu-latest' || inputs.runner == 'ubuntu-latest' }}
         uses: actions/cache@v4
@@ -53,9 +53,7 @@ jobs:
           path: |
             ~/.cache/ccache
             ~/.config/ccache
-          # 用当前运行次数和尝试次数做 key，确保每次都能正常生成新缓存快照
           key: helium-ccache-${{ github.run_id }}-${{ github.run_attempt }}
-          # 每次启动时，自动继承上一次成功保存的缓存
           restore-keys: |
             helium-ccache-
 
@@ -101,7 +99,7 @@ jobs:
       - name: Prepare
         run: |
           chmod +x *.sh
-          # 🌟 安装 ccache 并在环境中启用它
+          # 安装 ccache 并在环境中启用它
           sudo apt-get update && sudo apt-get install -y ccache
           
           version="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)"
@@ -111,18 +109,14 @@ jobs:
       # 🌟 核心修改 2：给 ./build.sh 增加限时锁（19800秒 = 5.5小时）
       - name: Build
         run: |
-          # 如果选的是免费服务器，强制用 timeout 锁死在 5.5 小时，防止撞上 6 小时被 GitHub 强杀。
-          # 时间到了会自动退出并返回成功(|| true)，让后续的 Cache 步骤能正常保存。
           if [ "${{ github.event.inputs.runner }}" = "ubuntu-latest" ] || [ "${{ github.event_name }}" = "push" ]; then
             echo "Running on free runner, applying 5.5h timeout protection..."
             timeout 19800s ./build.sh || true
           else
-            # 如果是自托管服务器，直接放开跑满
             ./build.sh
           fi
 
       - name: Collect outputs
-        # 🌟 只有当真正编译出 APK 的时候才执行收集，否则跳过
         id: collect
         run: |
           if [ -f "chromium/src/out/release/${VERSION}-arm64-v8a.apk" ]; then
@@ -154,7 +148,5 @@ jobs:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', env.VERSION) }}
           name: Helium Android ${{ env.VERSION }}
           generate_release_notes: true
-          files: |
-            artifacts/*          generate_release_notes: true
           files: |
             artifacts/*
