@@ -8,6 +8,8 @@ export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # http
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
 sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick
+git config --global user.name "Helium CI"
+git config --global user.email "helium-ci@localhost"
 
 # https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
 git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
