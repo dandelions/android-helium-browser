@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e
+
 source common.sh
 set_keys
 export VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)

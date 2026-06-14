@@ -38,9 +38,6 @@ include_both_v8_snapshots = false
 include_both_v8_snapshots_android_secondary_abi = false
 generate_linker_map = true
 
-v8_enable_drumbrake = true
-v8_drumbrake_bounds_checks = true
-
 # Vanadium M149 still relies on Java-side child process hooks for sandboxed
 # renderer command lines. Native-only renderer services can skip those hooks
 # after Android reclaims renderer processes, which may leave new tabs blank.
