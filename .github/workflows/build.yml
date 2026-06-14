@@ -6,8 +6,11 @@ on:
       runner:
         description: Runner label. Chromium Android builds usually need a large self-hosted runner.
         required: true
-        type: string
-        default: self-hosted
+        type: choice
+        default: ubuntu-latest
+        options:
+          - ubuntu-latest
+          - self-hosted
       publish_release:
         description: Publish build outputs to a GitHub Release.
         required: true
@@ -31,7 +34,7 @@ env:
 
 jobs:
   build:
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'self-hosted' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 720
 
     steps:
