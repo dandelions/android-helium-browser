@@ -16,14 +16,24 @@ on:
         required: true
         type: boolean
         default: false
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
-
+      auto_continue:
+        description: Start another 5.5h cache-warming run when the build times out.
+        required: true
+        type: boolean
+        default: false
+      continue_pass:
+        description: Internal retry counter for auto-continued runs.
+        required: true
+        type: string
+        default: '0'
+      max_continue_passes:
+        description: Maximum number of auto-continued runs after the first timeout.
+        required: true
+        type: string
+        default: '3'
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: android-build-${{ github.ref }}
@@ -45,17 +55,28 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      # 🌟 核心修改 1：挂载 ccache 缓存目录
-      - name: Setup Compiler Cache
-        if: ${{ matrix.runner == 'ubuntu-latest' || inputs.runner == 'ubuntu-latest' }}
-        uses: actions/cache@v4
+      - name: Compute compiler cache key
+        id: cache_key
+        run: |
+          fingerprint="$(sha256sum args.gn vanadium/args.gn build.sh .github/workflows/build.yml | sha256sum | cut -c1-16)"
+          ref_name="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:' '--')"
+          key="helium-ccache-${RUNNER_OS}-${ref_name}-${fingerprint}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          restore_prefix="helium-ccache-${RUNNER_OS}-${ref_name}-${fingerprint}-"
+          echo "CCACHE_KEY=$key" >> "$GITHUB_ENV"
+          echo "CCACHE_RESTORE_PREFIX=$restore_prefix" >> "$GITHUB_ENV"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "restore_prefix=$restore_prefix" >> "$GITHUB_OUTPUT"
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cache/ccache
             ~/.config/ccache
-          key: helium-ccache-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ steps.cache_key.outputs.key }}
           restore-keys: |
-            helium-ccache-
+            ${{ steps.cache_key.outputs.restore_prefix }}
+            helium-ccache-${{ runner.os }}-
 
       - name: Prepare signing config
         id: signing
@@ -99,22 +120,62 @@ jobs:
       - name: Prepare
         run: |
           chmod +x *.sh
-          # 安装 ccache 并在环境中启用它
-          sudo apt-get update && sudo apt-get install -y ccache
-          
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+          export CCACHE_DIR="$HOME/.cache/ccache"
+          mkdir -p "$CCACHE_DIR" "$HOME/.config/ccache"
+          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+          echo "CCACHE_NOHASHDIR=true" >> "$GITHUB_ENV"
+          ccache --set-config=max_size=5G
+          ccache --set-config=compression=true
+          ccache --zero-stats || true
+
           version="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)"
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "BUILD_SUFFIX=${version}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
 
-      # 🌟 核心修改 2：给 ./build.sh 增加限时锁（19800秒 = 5.5小时）
       - name: Build
+        id: build
+        env:
+          RUNNER_LABEL: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-latest' }}
         run: |
-          if [ "${{ github.event.inputs.runner }}" = "ubuntu-latest" ] || [ "${{ github.event_name }}" = "push" ]; then
-            echo "Running on free runner, applying 5.5h timeout protection..."
-            timeout 19800s ./build.sh || true
+          set +e
+          if [ "$RUNNER_LABEL" = "ubuntu-latest" ]; then
+            echo "Running on ubuntu-latest, stopping after 5.5h so cache can be saved."
+            timeout 19800s ./build.sh
+            status=$?
           else
             ./build.sh
+            status=$?
           fi
+
+          set -e
+          if [ "$status" -eq 124 ]; then
+            echo "BUILD_TIMED_OUT=true" >> "$GITHUB_ENV"
+            echo "timed_out=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "BUILD_TIMED_OUT=false" >> "$GITHUB_ENV"
+          echo "timed_out=false" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Show compiler cache stats
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Save compiler cache
+        if: always() && steps.cache_key.outputs.key != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/ccache
+            ~/.config/ccache
+          key: ${{ steps.cache_key.outputs.key }}
 
       - name: Collect outputs
         id: collect
@@ -127,9 +188,49 @@ jobs:
             sha256sum artifacts/* > "artifacts/${BUILD_SUFFIX}-SHA256SUMS.txt"
             echo "has_outputs=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Chromium build incomplete yet. Saving cache for the next run..."
+            if [ "${BUILD_TIMED_OUT:-false}" != "true" ]; then
+              echo "::error::Build finished without the expected APK/AAB outputs."
+              exit 1
+            fi
+            echo "Chromium build timed out before outputs were produced. Cache was saved for the next run."
             echo "has_outputs=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Continue timed build
+        if: steps.collect.outputs.has_outputs == 'false' && env.BUILD_TIMED_OUT == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          RUNNER_LABEL: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-latest' }}
+          PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
+          AUTO_CONTINUE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_continue }}
+          CONTINUE_PASS: ${{ github.event_name == 'workflow_dispatch' && inputs.continue_pass || '0' }}
+          MAX_CONTINUE_PASSES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_continue_passes || '3' }}
+        run: |
+          if [ "$AUTO_CONTINUE" != "true" ]; then
+            echo "Auto-continue is disabled."
+            exit 0
+          fi
+
+          case "$CONTINUE_PASS" in
+            ''|*[!0-9]*) CONTINUE_PASS=0 ;;
+          esac
+          case "$MAX_CONTINUE_PASSES" in
+            ''|*[!0-9]*) MAX_CONTINUE_PASSES=3 ;;
+          esac
+
+          if [ "$CONTINUE_PASS" -ge "$MAX_CONTINUE_PASSES" ]; then
+            echo "::error::Build timed out after ${CONTINUE_PASS} continued run(s). Use a self-hosted runner or increase max_continue_passes."
+            exit 1
+          fi
+
+          next_pass=$((CONTINUE_PASS + 1))
+          gh workflow run build.yml \
+            --ref "$GITHUB_REF_NAME" \
+            -f runner="$RUNNER_LABEL" \
+            -f publish_release="$PUBLISH_RELEASE" \
+            -f auto_continue=true \
+            -f continue_pass="$next_pass" \
+            -f max_continue_passes="$MAX_CONTINUE_PASSES"
 
       - name: Upload artifacts
         if: steps.collect.outputs.has_outputs == 'true'

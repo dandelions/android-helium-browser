@@ -7,19 +7,28 @@ export VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
-sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick
+sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache
 git config --global user.name "Helium CI"
 git config --global user.email "helium-ci@localhost"
 
 # https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
-git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
+if [ ! -d depot_tools/.git ]; then
+    git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
+else
+    git -C depot_tools fetch --depth 1 origin
+    git -C depot_tools reset --hard origin/HEAD
+fi
 export PATH="$PWD/depot_tools:$PATH"
 mkdir -p chromium/src/out/Default; cd chromium
 gclient root; cd src
 git init
 git config user.name "Helium CI"
 git config user.email "helium-ci@localhost"
-git remote add origin $CHROMIUM_SOURCE
+if ! git remote get-url origin >/dev/null 2>&1; then
+    git remote add origin $CHROMIUM_SOURCE
+else
+    git remote set-url origin $CHROMIUM_SOURCE
+fi
 git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
 git checkout $VERSION
 export COMMIT=$(git show-ref -s $VERSION | head -n1)
@@ -66,6 +75,9 @@ rm -rf third_party/angle/third_party/VK-GL-CTS/
 source $SCRIPT_DIR/patch.sh
 
 cp $SCRIPT_DIR/args.gn out/Default/args.gn
+if command -v ccache >/dev/null 2>&1; then
+    echo 'cc_wrapper = "ccache"' >> out/Default/args.gn
+fi
 sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get install -y libgcc-s1:i386
 gn gen out/Default # gn args out/Default; echo 'treat_warnings_as_errors = false' >> out/Default/args.gn
 mkdir -p out/tmp out/release
