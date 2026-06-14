@@ -2,11 +2,13 @@ chrome_public_manifest_package = "io.github.jqssun.helium"
 is_desktop_android = true
 target_os = "android"
 target_cpu = "arm"
+enable_android_secondary_abi = false
 is_component_build = false
 is_debug = false
 is_official_build = true
 symbol_level = 1
 disable_fieldtrial_testing_config = true
+dfmify_dev_ui = false
 ffmpeg_branding = "Chrome"
 proprietary_codecs = true
 enable_vr = false
@@ -20,6 +22,7 @@ google_default_client_id = "x"
 google_default_client_secret = "x"
 
 use_siso = true
+android_static_analysis = "off"
 use_login_database_as_backend = true
 build_contextual_search = false
 dcheck_always_on = false
@@ -34,3 +37,11 @@ enable_dav1d_decoder = true
 include_both_v8_snapshots = false
 include_both_v8_snapshots_android_secondary_abi = false
 generate_linker_map = true
+
+v8_enable_drumbrake = true
+v8_drumbrake_bounds_checks = true
+
+# Vanadium M149 still relies on Java-side child process hooks for sandboxed
+# renderer command lines. Native-only renderer services can skip those hooks
+# after Android reclaims renderer processes, which may leave new tabs blank.
+enable_javaless_renderers = false
