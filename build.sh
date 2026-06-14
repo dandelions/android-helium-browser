@@ -15,6 +15,8 @@ export PATH="$PWD/depot_tools:$PATH"
 mkdir -p chromium/src/out/Default; cd chromium
 gclient root; cd src
 git init
+git config user.name "Helium CI"
+git config user.email "helium-ci@localhost"
 git remote add origin $CHROMIUM_SOURCE
 git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
 git checkout $VERSION
