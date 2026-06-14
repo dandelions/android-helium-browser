@@ -20,7 +20,7 @@ on:
         description: Start another 5.5h cache-warming run when the build times out.
         required: true
         type: boolean
-        default: false
+        default: true
       continue_pass:
         description: Internal retry counter for auto-continued runs.
         required: true
