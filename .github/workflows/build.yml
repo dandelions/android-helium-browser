@@ -42,13 +42,44 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Validate signing secrets
+      - name: Prepare signing config
+        id: signing
         env:
           LOCAL_TEST_JKS: ${{ secrets.LOCAL_TEST_JKS }}
           STORE_TEST_JKS: ${{ secrets.STORE_TEST_JKS }}
         run: |
-          test -n "$LOCAL_TEST_JKS"
-          test -n "$STORE_TEST_JKS"
+          if [ -n "$LOCAL_TEST_JKS" ] && [ -n "$STORE_TEST_JKS" ]; then
+            echo "LOCAL_TEST_JKS=$LOCAL_TEST_JKS" >> "$GITHUB_ENV"
+            echo "STORE_TEST_JKS=$STORE_TEST_JKS" >> "$GITHUB_ENV"
+            echo "source=secrets" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! command -v keytool >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y openjdk-17-jre-headless
+          fi
+
+          mkdir -p ci-signing
+          printf '%s\n' \
+            'keyAlias=helium-ci' \
+            'keyPassword=android' \
+            'storePassword=android' \
+            > ci-signing/local.properties
+
+          keytool -genkeypair \
+            -keystore ci-signing/test.jks \
+            -storepass android \
+            -keypass android \
+            -alias helium-ci \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Helium CI,O=Helium,C=US"
+
+          echo "LOCAL_TEST_JKS=$(base64 -w0 ci-signing/local.properties)" >> "$GITHUB_ENV"
+          echo "STORE_TEST_JKS=$(base64 -w0 ci-signing/test.jks)" >> "$GITHUB_ENV"
+          echo "source=generated" >> "$GITHUB_OUTPUT"
 
       - name: Prepare
         run: |
@@ -58,9 +89,6 @@ jobs:
           echo "BUILD_SUFFIX=${version}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
 
       - name: Build
-        env:
-          LOCAL_TEST_JKS: ${{ secrets.LOCAL_TEST_JKS }}
-          STORE_TEST_JKS: ${{ secrets.STORE_TEST_JKS }}
         run: |
           ./build.sh
 
@@ -81,7 +109,7 @@ jobs:
           retention-days: 14
 
       - name: Publish release
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
+        if: ${{ steps.signing.outputs.source == 'secrets' && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)) }}
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GH_PAT || github.token }}
