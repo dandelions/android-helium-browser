@@ -7,9 +7,54 @@ export VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
-sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache
+sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd
 git config --global user.name "Helium CI"
 git config --global user.email "helium-ci@localhost"
+
+append_common_gn_args() {
+    if command -v ccache >/dev/null 2>&1; then
+        echo 'cc_wrapper = "ccache"' >> "$1"
+    fi
+}
+
+restore_build_state() {
+    if [ -n "$BUILD_STATE_ARCHIVE" ] && [ -f "$BUILD_STATE_ARCHIVE" ]; then
+        echo "Restoring Chromium build state from $BUILD_STATE_ARCHIVE"
+        tar -xf "$BUILD_STATE_ARCHIVE" -C .
+        export BUILD_STATE_RESTORED=1
+    fi
+}
+
+refresh_restored_outputs() {
+    if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -d "$1" ]; then
+        find "$1" -type f -exec touch {} +
+    fi
+}
+
+configure_out_dir() {
+    local out_dir="$1"
+    local target_cpu="$2"
+
+    mkdir -p "$out_dir"
+    cp "$SCRIPT_DIR/args.gn" "$out_dir/args.gn"
+    if [ "$target_cpu" = "arm64" ]; then
+        sed -i 's/target_cpu = "arm"/target_cpu = "arm64"/' "$out_dir/args.gn"
+    fi
+    append_common_gn_args "$out_dir/args.gn"
+    gn gen "$out_dir"
+    refresh_restored_outputs "$out_dir"
+}
+
+copy_first_output() {
+    local search_dir="$1"
+    local name_pattern="$2"
+    local destination="$3"
+    local output
+
+    output="$(find "$search_dir" -name "$name_pattern" | head -n 1)"
+    test -n "$output"
+    cp "$output" "$destination"
+}
 
 # https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
 if [ ! -d depot_tools/.git ]; then
@@ -19,7 +64,7 @@ else
     git -C depot_tools reset --hard origin/HEAD
 fi
 export PATH="$PWD/depot_tools:$PATH"
-mkdir -p chromium/src/out/Default; cd chromium
+mkdir -p chromium/src; cd chromium
 gclient root; cd src
 git init
 git config user.name "Helium CI"
@@ -73,21 +118,19 @@ rm -rf third_party/angle/third_party/VK-GL-CTS/
 # python3 "${SCRIPT_DIR}/helium/utils/replace_resources.py" "${SCRIPT_DIR}/helium/resources/helium_resources.txt" "${SCRIPT_DIR}/helium/resources" .
 
 source $SCRIPT_DIR/patch.sh
+restore_build_state
 
-cp $SCRIPT_DIR/args.gn out/Default/args.gn
-if command -v ccache >/dev/null 2>&1; then
-    echo 'cc_wrapper = "ccache"' >> out/Default/args.gn
-fi
 sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get install -y libgcc-s1:i386
-gn gen out/Default # gn args out/Default; echo 'treat_warnings_as_errors = false' >> out/Default/args.gn
 mkdir -p out/tmp out/release
-autoninja -C out/Default chrome_public_apk
-mv $(find out/Default/apks -name 'Chrome*.apk') out/tmp/$VERSION-armeabi-v7a.apk
 
-sed -i 's/target_cpu = "arm"/target_cpu = "arm64"/' out/Default/args.gn
-autoninja -C out/Default chrome_public_apk chrome_public_bundle
-mv $(find out/Default/apks -name 'Chrome*.apk') out/tmp/$VERSION-arm64-v8a.apk
-mv $(find out/Default/apks -name 'Chrome*.aab') out/tmp/$VERSION-arm64-v8a.aab
+configure_out_dir out/arm arm
+autoninja -C out/arm chrome_public_apk
+copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/$VERSION-armeabi-v7a.apk"
+
+configure_out_dir out/arm64 arm64
+autoninja -C out/arm64 chrome_public_apk chrome_public_bundle
+copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/$VERSION-arm64-v8a.apk"
+copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/$VERSION-arm64-v8a.aab"
 
 export PATH=$PWD/third_party/jdk/current/bin/:$PATH
 export ANDROID_HOME=$PWD/third_party/android_sdk/public

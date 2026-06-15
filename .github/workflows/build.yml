@@ -31,6 +31,11 @@ on:
         required: true
         type: string
         default: '3'
+      build_state_run_id:
+        description: Internal run id containing a previous build-state artifact.
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: write
   actions: write
@@ -41,6 +46,7 @@ concurrency:
 
 env:
   DEBIAN_FRONTEND: noninteractive
+  BUILD_STATE_ARTIFACT: helium-build-state
 
 jobs:
   build:
@@ -121,7 +127,7 @@ jobs:
         run: |
           chmod +x *.sh
           sudo apt-get update
-          sudo apt-get install -y ccache
+          sudo apt-get install -y ccache zstd
 
           export CCACHE_DIR="$HOME/.cache/ccache"
           mkdir -p "$CCACHE_DIR" "$HOME/.config/ccache"
@@ -136,6 +142,26 @@ jobs:
           version="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)"
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "BUILD_SUFFIX=${version}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
+      - name: Restore previous build state
+        if: ${{ inputs.build_state_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          BUILD_STATE_RUN_ID: ${{ inputs.build_state_run_id }}
+        run: |
+          mkdir -p build-state
+          if ! gh run download "$BUILD_STATE_RUN_ID" -n "$BUILD_STATE_ARTIFACT" -D build-state; then
+            echo "::warning::No build-state artifact was found for run $BUILD_STATE_RUN_ID."
+            exit 0
+          fi
+
+          if [ ! -f build-state/chromium-build-state.tar.zst ]; then
+            echo "::warning::Build-state artifact did not contain chromium-build-state.tar.zst."
+            exit 0
+          fi
+
+          echo "BUILD_STATE_ARCHIVE=$GITHUB_WORKSPACE/build-state/chromium-build-state.tar.zst" >> "$GITHUB_ENV"
+          ls -lh build-state/chromium-build-state.tar.zst
 
       - name: Build
         id: build
@@ -177,6 +203,49 @@ jobs:
             ~/.config/ccache
           key: ${{ steps.cache_key.outputs.key }}
 
+      - name: Package build state
+        id: package_state
+        if: steps.build.outputs.timed_out == 'true'
+        timeout-minutes: 45
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd
+
+          if [ ! -d chromium/src/out ]; then
+            echo "::warning::No Chromium output directory exists yet."
+            exit 0
+          fi
+
+          mkdir -p build-state
+          cd chromium/src
+          paths=""
+          for path in out/arm out/arm64 out/tmp; do
+            if [ -e "$path" ]; then
+              paths="$paths $path"
+            fi
+          done
+
+          if [ -z "$paths" ]; then
+            echo "::warning::No build output directories were available to package."
+            exit 0
+          fi
+
+          tar --use-compress-program='zstd -1 -T0' \
+            -cf "$GITHUB_WORKSPACE/build-state/chromium-build-state.tar.zst" \
+            $paths
+          ls -lh "$GITHUB_WORKSPACE/build-state/chromium-build-state.tar.zst"
+          echo "has_state=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build state
+        if: steps.package_state.outputs.has_state == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BUILD_STATE_ARTIFACT }}
+          path: build-state/chromium-build-state.tar.zst
+          if-no-files-found: warn
+          retention-days: 2
+          compression-level: 0
+
       - name: Collect outputs
         id: collect
         run: |
@@ -197,7 +266,7 @@ jobs:
           fi
 
       - name: Continue timed build
-        if: steps.collect.outputs.has_outputs == 'false' && env.BUILD_TIMED_OUT == 'true'
+        if: steps.collect.outputs.has_outputs == 'false' && steps.build.outputs.timed_out == 'true' && steps.package_state.outputs.has_state == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
           RUNNER_LABEL: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-latest' }}
@@ -230,7 +299,8 @@ jobs:
             -f publish_release="$PUBLISH_RELEASE" \
             -f auto_continue=true \
             -f continue_pass="$next_pass" \
-            -f max_continue_passes="$MAX_CONTINUE_PASSES"
+            -f max_continue_passes="$MAX_CONTINUE_PASSES" \
+            -f build_state_run_id="$GITHUB_RUN_ID"
 
       - name: Upload artifacts
         if: steps.collect.outputs.has_outputs == 'true'
