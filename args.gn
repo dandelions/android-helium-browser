@@ -21,7 +21,10 @@ google_api_key = "x"
 google_default_client_id = "x"
 google_default_client_secret = "x"
 
-use_siso = true
+# Siso state is not reliable across GitHub hosted runners when out/ is restored
+# from an artifact. Plain Ninja resumes better from persisted .ninja_log,
+# .ninja_deps and object files.
+use_siso = false
 android_static_analysis = "off"
 use_login_database_as_backend = true
 build_contextual_search = false

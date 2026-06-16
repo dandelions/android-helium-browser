@@ -21,6 +21,7 @@ restore_build_state() {
     if [ -n "$BUILD_STATE_ARCHIVE" ] && [ -f "$BUILD_STATE_ARCHIVE" ]; then
         echo "Restoring Chromium build state from $BUILD_STATE_ARCHIVE"
         tar -xf "$BUILD_STATE_ARCHIVE" -C .
+        du -sh out/arm out/arm64 out/tmp 2>/dev/null || true
         export BUILD_STATE_RESTORED=1
     fi
 }
