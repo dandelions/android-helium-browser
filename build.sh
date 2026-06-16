@@ -28,22 +28,44 @@ restore_build_state() {
 
 refresh_restored_outputs() {
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -d "$1" ]; then
-        find "$1" -type f -exec touch {} +
+        find "$1" -exec touch -h {} +
+    fi
+}
+
+show_out_dir_state() {
+    local out_dir="$1"
+
+    if [ -d "$out_dir" ]; then
+        echo "Build state for $out_dir:"
+        ls -lh "$out_dir"/args.gn "$out_dir"/build.ninja "$out_dir"/.ninja_log "$out_dir"/.ninja_deps 2>/dev/null || true
     fi
 }
 
 configure_out_dir() {
     local out_dir="$1"
     local target_cpu="$2"
+    local desired_args
 
     mkdir -p "$out_dir"
-    cp "$SCRIPT_DIR/args.gn" "$out_dir/args.gn"
+    desired_args="$(mktemp)"
+    cp "$SCRIPT_DIR/args.gn" "$desired_args"
     if [ "$target_cpu" = "arm64" ]; then
-        sed -i 's/target_cpu = "arm"/target_cpu = "arm64"/' "$out_dir/args.gn"
+        sed -i 's/target_cpu = "arm"/target_cpu = "arm64"/' "$desired_args"
     fi
-    append_common_gn_args "$out_dir/args.gn"
+    append_common_gn_args "$desired_args"
+
+    if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
+        echo "Reusing restored GN output in $out_dir"
+        rm -f "$desired_args"
+        refresh_restored_outputs "$out_dir"
+        show_out_dir_state "$out_dir"
+        return
+    fi
+
+    mv "$desired_args" "$out_dir/args.gn"
     gn gen "$out_dir"
     refresh_restored_outputs "$out_dir"
+    show_out_dir_state "$out_dir"
 }
 
 copy_first_output() {
