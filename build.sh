@@ -17,7 +17,7 @@ fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
-sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd
+sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2
 git config --global user.name "Helium CI"
 git config --global user.email "helium-ci@localhost"
 
