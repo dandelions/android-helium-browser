@@ -97,8 +97,8 @@ else
     git -C depot_tools reset --hard origin/HEAD
 fi
 export PATH="$PWD/depot_tools:$PATH"
-mkdir -p chromium/src; cd chromium
-gclient root; cd src
+mkdir -p chromium/src
+cd chromium/src
 git init
 git config user.name "Helium CI"
 git config user.email "helium-ci@localhost"
@@ -139,8 +139,10 @@ replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
 replace "$SCRIPT_DIR/vanadium/patches" "vanadium" "helium"
 git am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
 
+cd ..
 gclient sync -D --no-history --nohooks
 gclient runhooks
+cd src
 rm -rf third_party/angle/third_party/VK-GL-CTS/
 ./build/install-build-deps.sh --no-prompt
 
