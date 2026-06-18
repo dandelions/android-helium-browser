@@ -3,6 +3,7 @@ set -e
 
 SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 source "$SCRIPT_DIR/common.sh"
+cd "$SCRIPT_DIR"
 set_keys
 VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
 if [ ! -f "$VERSION_ARGS" ]; then
@@ -99,6 +100,16 @@ reset_chromium_checkout() {
     fi
 }
 
+ensure_depot_tools_bootstrap() {
+    export DEPOT_TOOLS_DIR="$SCRIPT_DIR/depot_tools"
+    "$DEPOT_TOOLS_DIR/ensure_bootstrap"
+
+    if [ ! -f "$DEPOT_TOOLS_DIR/python3_bin_reldir.txt" ]; then
+        echo "depot_tools bootstrap failed: missing $DEPOT_TOOLS_DIR/python3_bin_reldir.txt" >&2
+        exit 1
+    fi
+}
+
 # https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
 if [ ! -d depot_tools/.git ]; then
     git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -107,6 +118,7 @@ else
     git -C depot_tools reset --hard origin/HEAD
 fi
 export PATH="$PWD/depot_tools:$PATH"
+ensure_depot_tools_bootstrap
 mkdir -p chromium/src
 cd chromium/src
 git init
@@ -183,4 +195,6 @@ export ANDROID_HOME=$PWD/third_party/android_sdk/public
 sign_apk out/tmp/$VERSION-armeabi-v7a.apk out/release/$VERSION-armeabi-v7a.apk
 sign_apk out/tmp/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.apk
 sign_aab out/tmp/$VERSION-arm64-v8a.aab out/release/$VERSION-arm64-v8a.aab
+echo "Build outputs:"
+ls -lh out/release/$VERSION-armeabi-v7a.apk out/release/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.aab
 rm -rf $SCRIPT_DIR/keys
