@@ -89,6 +89,16 @@ copy_first_output() {
     cp "$output" "$destination"
 }
 
+reset_chromium_checkout() {
+    git am --abort >/dev/null 2>&1 || true
+    git rebase --abort >/dev/null 2>&1 || true
+    git merge --abort >/dev/null 2>&1 || true
+
+    if git rev-parse --verify HEAD >/dev/null 2>&1; then
+        git reset --hard
+    fi
+}
+
 # https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
 if [ ! -d depot_tools/.git ]; then
     git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -102,13 +112,14 @@ cd chromium/src
 git init
 git config user.name "Helium CI"
 git config user.email "helium-ci@localhost"
+reset_chromium_checkout
 if ! git remote get-url origin >/dev/null 2>&1; then
     git remote add origin $CHROMIUM_SOURCE
 else
     git remote set-url origin $CHROMIUM_SOURCE
 fi
 git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
-git checkout $VERSION
+git checkout -f $VERSION
 export COMMIT=$(git show-ref -s $VERSION | head -n1)
 cat > ../.gclient <<EOF
 solutions = [
