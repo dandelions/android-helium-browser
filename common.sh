@@ -1,4 +1,4 @@
-export SCRIPT_DIR=$(realpath $(dirname $0))
+export SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 
 replace() {
     export org=$2 new=$3

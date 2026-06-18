@@ -1,9 +1,19 @@
 #!/bin/bash
 set -e
 
-source common.sh
+SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
+source "$SCRIPT_DIR/common.sh"
 set_keys
-export VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' vanadium/args.gn)
+VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
+if [ ! -f "$VERSION_ARGS" ]; then
+    echo "Missing $VERSION_ARGS. Run: git submodule update --init --recursive" >&2
+    exit 1
+fi
+export VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)
+if [ -z "$VERSION" ]; then
+    echo "Unable to read Chromium version from $VERSION_ARGS" >&2
+    exit 1
+fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
