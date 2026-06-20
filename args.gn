@@ -6,7 +6,9 @@ enable_android_secondary_abi = false
 is_component_build = false
 is_debug = false
 is_official_build = true
-symbol_level = 1
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
 disable_fieldtrial_testing_config = true
 dfmify_dev_ui = false
 ffmpeg_branding = "Chrome"
@@ -39,7 +41,7 @@ enable_av1_decoder = true
 enable_dav1d_decoder = true
 include_both_v8_snapshots = false
 include_both_v8_snapshots_android_secondary_abi = false
-generate_linker_map = true
+generate_linker_map = false
 
 # Vanadium M149 still relies on Java-side child process hooks for sandboxed
 # renderer command lines. Native-only renderer services can skip those hooks

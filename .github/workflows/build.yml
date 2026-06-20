@@ -251,14 +251,18 @@ jobs:
         run: |
           if [ -f "chromium/src/out/release/${VERSION}-arm64-v8a.apk" ]; then
             mkdir -p artifacts
-            cp "chromium/src/out/release/${VERSION}-armeabi-v7a.apk" "artifacts/${BUILD_SUFFIX}-armeabi-v7a.apk"
             cp "chromium/src/out/release/${VERSION}-arm64-v8a.apk" "artifacts/${BUILD_SUFFIX}-arm64-v8a.apk"
-            cp "chromium/src/out/release/${VERSION}-arm64-v8a.aab" "artifacts/${BUILD_SUFFIX}-arm64-v8a.aab"
+            if [ -f "chromium/src/out/release/${VERSION}-armeabi-v7a.apk" ]; then
+              cp "chromium/src/out/release/${VERSION}-armeabi-v7a.apk" "artifacts/${BUILD_SUFFIX}-armeabi-v7a.apk"
+            fi
+            if [ -f "chromium/src/out/release/${VERSION}-arm64-v8a.aab" ]; then
+              cp "chromium/src/out/release/${VERSION}-arm64-v8a.aab" "artifacts/${BUILD_SUFFIX}-arm64-v8a.aab"
+            fi
             sha256sum artifacts/* > "artifacts/${BUILD_SUFFIX}-SHA256SUMS.txt"
             echo "has_outputs=true" >> "$GITHUB_OUTPUT"
           else
             if [ "${BUILD_TIMED_OUT:-false}" != "true" ]; then
-              echo "::error::Build finished without the expected APK/AAB outputs."
+              echo "::error::Build finished without the expected arm64 APK output."
               exit 1
             fi
             echo "Chromium build timed out before outputs were produced. Cache was saved for the next run."

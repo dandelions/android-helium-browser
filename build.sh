@@ -15,6 +15,8 @@ if [ -z "$VERSION" ]; then
     echo "Unable to read Chromium version from $VERSION_ARGS" >&2
     exit 1
 fi
+BUILD_ARM="${BUILD_ARM:-0}"
+BUILD_AAB="${BUILD_AAB:-0}"
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
@@ -88,6 +90,17 @@ copy_first_output() {
     output="$(find "$search_dir" -name "$name_pattern" | head -n 1)"
     test -n "$output"
     cp "$output" "$destination"
+}
+
+run_autoninja() {
+    local out_dir="$1"
+    shift
+
+    if [ -n "${NINJA_JOBS:-}" ]; then
+        autoninja -C "$out_dir" -j "$NINJA_JOBS" "$@"
+    else
+        autoninja -C "$out_dir" "$@"
+    fi
 }
 
 reset_chromium_checkout() {
@@ -180,21 +193,38 @@ restore_build_state
 
 sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get install -y libgcc-s1:i386
 mkdir -p out/tmp out/release
+echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_AAB=$BUILD_AAB NINJA_JOBS=${NINJA_JOBS:-auto}"
 
-configure_out_dir out/arm arm
-autoninja -C out/arm chrome_public_apk
-copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/$VERSION-armeabi-v7a.apk"
+if [ "$BUILD_ARM" = "1" ]; then
+    configure_out_dir out/arm arm
+    run_autoninja out/arm chrome_public_apk
+    copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/$VERSION-armeabi-v7a.apk"
+fi
 
 configure_out_dir out/arm64 arm64
-autoninja -C out/arm64 chrome_public_apk chrome_public_bundle
+arm64_targets="chrome_public_apk"
+if [ "$BUILD_AAB" = "1" ]; then
+    arm64_targets="$arm64_targets chrome_public_bundle"
+fi
+run_autoninja out/arm64 $arm64_targets
 copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/$VERSION-arm64-v8a.apk"
-copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/$VERSION-arm64-v8a.aab"
+if [ "$BUILD_AAB" = "1" ]; then
+    copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/$VERSION-arm64-v8a.aab"
+fi
 
 export PATH=$PWD/third_party/jdk/current/bin/:$PATH
 export ANDROID_HOME=$PWD/third_party/android_sdk/public
-sign_apk out/tmp/$VERSION-armeabi-v7a.apk out/release/$VERSION-armeabi-v7a.apk
+release_outputs=""
+if [ "$BUILD_ARM" = "1" ]; then
+    sign_apk out/tmp/$VERSION-armeabi-v7a.apk out/release/$VERSION-armeabi-v7a.apk
+    release_outputs="$release_outputs out/release/$VERSION-armeabi-v7a.apk"
+fi
 sign_apk out/tmp/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.apk
-sign_aab out/tmp/$VERSION-arm64-v8a.aab out/release/$VERSION-arm64-v8a.aab
+release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.apk"
+if [ "$BUILD_AAB" = "1" ]; then
+    sign_aab out/tmp/$VERSION-arm64-v8a.aab out/release/$VERSION-arm64-v8a.aab
+    release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.aab"
+fi
 echo "Build outputs:"
-ls -lh out/release/$VERSION-armeabi-v7a.apk out/release/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.aab
+ls -lh $release_outputs
 rm -rf $SCRIPT_DIR/keys
