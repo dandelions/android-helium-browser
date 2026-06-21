@@ -132,6 +132,105 @@ ensure_depot_tools_bootstrap() {
     fi
 }
 
+patch_filter_list_downloader() {
+    local downloader="helium/android_config/filter_lists/filter_list_download.py"
+    if [ ! -f "$downloader" ]; then
+        return
+    fi
+
+    cat > "$downloader" <<'PY'
+#!/usr/bin/env python3
+#
+# SPDX-License-Identifier: GPL-v2.0
+
+import argparse
+import hashlib
+import os
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+
+FALLBACK_URLS = {
+    'https://abpvn.com/filter/abpvn-IPl6HE.txt': [
+        'https://raw.githubusercontent.com/abpvn/abpvn/master/filter/abpvn.txt',
+    ],
+}
+
+
+def IsOptionalList(output):
+    name = os.path.basename(output)
+    return name.startswith('filter_lists_easylist_') and name != 'filter_lists_easylist.txt'
+
+
+def FetchUrl(url, retries=5):
+    context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            chunks = []
+            with urllib.request.urlopen(url=req, context=context, timeout=120) as res:
+                while True:
+                    buf = res.read(65536)
+                    if not buf:
+                        return b''.join(chunks)
+                    chunks.append(buf)
+        except Exception as exc:
+            last_error = exc
+            print(f'warning: failed to fetch {url} on attempt {attempt}/{retries}: {exc}', file=sys.stderr)
+            if attempt != retries:
+                time.sleep(min(30, attempt * 5))
+
+    raise last_error
+
+
+def FetchWithFallbacks(url):
+    errors = []
+    for candidate in [url] + FALLBACK_URLS.get(url, []):
+        try:
+            return FetchUrl(candidate)
+        except Exception as exc:
+            errors.append(f'{candidate}: {exc}')
+    raise RuntimeError('; '.join(errors))
+
+
+def FetchAndGenerateFilterList(args):
+    urls = sorted(list(set(args.urls)))
+    output = args.output
+    hasher = hashlib.new('sha256')
+
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    with open(output, 'wb') as output_file:
+        for url in urls:
+            if not url.startswith('https://'):
+                continue
+            try:
+                data = FetchWithFallbacks(url)
+            except Exception as exc:
+                if IsOptionalList(output):
+                    print(f'warning: skipping optional filter list URL {url}: {exc}', file=sys.stderr)
+                    continue
+                raise
+            output_file.write(data)
+            hasher.update(data)
+
+    with open('.'.join([output, 'sha256']), 'w') as f:
+        f.write(hasher.hexdigest())
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--urls', nargs='+',
+                        help='URLs to download for the generated filter list.')
+    parser.add_argument('--output', required=True)
+    FetchAndGenerateFilterList(parser.parse_args(sys.argv[1:]))
+PY
+}
+
 # https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
 if [ ! -d depot_tools/.git ]; then
     git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -183,6 +282,7 @@ replace "$SCRIPT_DIR/vanadium/patches" "VANADIUM" "HELIUM"
 replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
 replace "$SCRIPT_DIR/vanadium/patches" "vanadium" "helium"
 git am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
+patch_filter_list_downloader
 
 cd ..
 gclient sync -D --no-history --nohooks
