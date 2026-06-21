@@ -16,7 +16,16 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 BUILD_ARM="${BUILD_ARM:-0}"
+BUILD_ARM64="${BUILD_ARM64:-1}"
 BUILD_AAB="${BUILD_AAB:-0}"
+if [ "$BUILD_ARM" != "1" ] && [ "$BUILD_ARM64" != "1" ]; then
+    echo "At least one target ABI must be enabled. Set BUILD_ARM=1 or BUILD_ARM64=1." >&2
+    exit 1
+fi
+if [ "$BUILD_AAB" = "1" ] && [ "$BUILD_ARM64" != "1" ]; then
+    echo "BUILD_AAB=1 requires BUILD_ARM64=1." >&2
+    exit 1
+fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
@@ -193,7 +202,7 @@ restore_build_state
 
 sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get install -y libgcc-s1:i386
 mkdir -p out/tmp out/release
-echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_AAB=$BUILD_AAB NINJA_JOBS=${NINJA_JOBS:-auto}"
+echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB NINJA_JOBS=${NINJA_JOBS:-auto}"
 
 if [ "$BUILD_ARM" = "1" ]; then
     configure_out_dir out/arm arm
@@ -201,15 +210,17 @@ if [ "$BUILD_ARM" = "1" ]; then
     copy_first_output out/arm/apks 'Chrome*.apk' "out/tmp/$VERSION-armeabi-v7a.apk"
 fi
 
-configure_out_dir out/arm64 arm64
-arm64_targets="chrome_public_apk"
-if [ "$BUILD_AAB" = "1" ]; then
-    arm64_targets="$arm64_targets chrome_public_bundle"
-fi
-run_autoninja out/arm64 $arm64_targets
-copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/$VERSION-arm64-v8a.apk"
-if [ "$BUILD_AAB" = "1" ]; then
-    copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/$VERSION-arm64-v8a.aab"
+if [ "$BUILD_ARM64" = "1" ]; then
+    configure_out_dir out/arm64 arm64
+    arm64_targets="chrome_public_apk"
+    if [ "$BUILD_AAB" = "1" ]; then
+        arm64_targets="$arm64_targets chrome_public_bundle"
+    fi
+    run_autoninja out/arm64 $arm64_targets
+    copy_first_output out/arm64/apks 'Chrome*.apk' "out/tmp/$VERSION-arm64-v8a.apk"
+    if [ "$BUILD_AAB" = "1" ]; then
+        copy_first_output out/arm64/apks 'Chrome*.aab' "out/tmp/$VERSION-arm64-v8a.aab"
+    fi
 fi
 
 export PATH=$PWD/third_party/jdk/current/bin/:$PATH
@@ -219,11 +230,13 @@ if [ "$BUILD_ARM" = "1" ]; then
     sign_apk out/tmp/$VERSION-armeabi-v7a.apk out/release/$VERSION-armeabi-v7a.apk
     release_outputs="$release_outputs out/release/$VERSION-armeabi-v7a.apk"
 fi
-sign_apk out/tmp/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.apk
-release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.apk"
-if [ "$BUILD_AAB" = "1" ]; then
-    sign_aab out/tmp/$VERSION-arm64-v8a.aab out/release/$VERSION-arm64-v8a.aab
-    release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.aab"
+if [ "$BUILD_ARM64" = "1" ]; then
+    sign_apk out/tmp/$VERSION-arm64-v8a.apk out/release/$VERSION-arm64-v8a.apk
+    release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.apk"
+    if [ "$BUILD_AAB" = "1" ]; then
+        sign_aab out/tmp/$VERSION-arm64-v8a.aab out/release/$VERSION-arm64-v8a.aab
+        release_outputs="$release_outputs out/release/$VERSION-arm64-v8a.aab"
+    fi
 fi
 echo "Build outputs:"
 ls -lh $release_outputs
