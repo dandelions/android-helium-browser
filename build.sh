@@ -4,7 +4,6 @@ set -e
 SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 source "$SCRIPT_DIR/common.sh"
 cd "$SCRIPT_DIR"
-set_keys
 VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
 if [ ! -f "$VERSION_ARGS" ]; then
     echo "Missing $VERSION_ARGS. Run: git submodule update --init --recursive" >&2
@@ -29,7 +28,8 @@ fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
-sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2
+sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2 openjdk-17-jre-headless
+set_keys
 git config --global user.name "Helium CI"
 git config --global user.email "helium-ci@localhost"
 
