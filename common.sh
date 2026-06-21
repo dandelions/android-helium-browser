@@ -6,6 +6,8 @@ replace() {
 }
 
 generate_test_keys() {
+    rm -f "$SCRIPT_DIR/keys/local.properties" "$SCRIPT_DIR/keys/test.jks"
+
     cat > "$SCRIPT_DIR/keys/local.properties" <<'EOF'
 keyAlias=helium-ci
 keyPassword=android
