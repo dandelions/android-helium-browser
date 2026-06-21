@@ -1,9 +1,9 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
-VERSION="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)"
+VERSION=$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)
 
 if [ -z "$VERSION" ]; then
     echo "Unable to read Vanadium version from $VERSION_ARGS" >&2
@@ -24,34 +24,39 @@ if [ ! -d "$RELEASE_DIR" ]; then
     exit 1
 fi
 
-shopt -s nullglob
-files=("$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab)
-shopt -u nullglob
+files_list=$(mktemp)
+trap 'rm -f "$files_list"' EXIT HUP INT TERM
 
-if [ "${#files[@]}" -eq 0 ]; then
+found=0
+for file in "$RELEASE_DIR/$VERSION"-*.apk "$RELEASE_DIR/$VERSION"-*.aab; do
+    if [ -f "$file" ]; then
+        printf '%s\n' "$file" >> "$files_list"
+        found=1
+    fi
+done
+
+if [ "$found" -ne 1 ]; then
     echo "No APK/AAB files found for version $VERSION in $RELEASE_DIR" >&2
     exit 1
 fi
 
-basenames=()
-for file in "${files[@]}"; do
-    basenames+=("$(basename "$file")")
-done
-
 sha_file="$RELEASE_DIR/$VERSION-SHA256SUMS.txt"
 (
     cd "$RELEASE_DIR"
-    sha256sum "${basenames[@]}" > "$sha_file"
+    : > "$sha_file"
+    while IFS= read -r file; do
+        sha256sum "$(basename "$file")" >> "$sha_file"
+    done < "$files_list"
 )
-files+=("$sha_file")
+printf '%s\n' "$sha_file" >> "$files_list"
 
-remote_url="$(git -C "$SCRIPT_DIR" remote get-url origin)"
-repo="$(printf '%s' "$remote_url" | sed -E 's#^https://([^@]+@)?github.com/##; s#^git@github.com:##; s#\.git$##')"
-head_commit="$(git -C "$SCRIPT_DIR" rev-parse HEAD)"
+remote_url=$(git -C "$SCRIPT_DIR" remote get-url origin)
+repo=$(printf '%s' "$remote_url" | sed -E 's#^https://([^@]+@)?github.com/##; s#^git@github.com:##; s#\.git$##')
+head_commit=$(git -C "$SCRIPT_DIR" rev-parse HEAD)
 
 git -C "$SCRIPT_DIR" fetch origin "refs/tags/$TAG:refs/tags/$TAG" >/dev/null 2>&1 || true
 if git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-    tag_commit="$(git -C "$SCRIPT_DIR" rev-list -n 1 "$TAG")"
+    tag_commit=$(git -C "$SCRIPT_DIR" rev-list -n 1 "$TAG")
     if [ "$tag_commit" != "$head_commit" ]; then
         if [ "$MOVE_TAG" = "1" ]; then
             git -C "$SCRIPT_DIR" tag -f "$TAG" "$head_commit"
@@ -72,12 +77,15 @@ fi
 
 if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
     gh release edit "$TAG" --repo "$repo" --title "Helium Android $VERSION"
-    gh release upload "$TAG" "${files[@]}" --repo "$repo" --clobber
 else
-    gh release create "$TAG" "${files[@]}" \
+    gh release create "$TAG" \
         --repo "$repo" \
         --title "Helium Android $VERSION" \
         --notes "Helium Android build based on Vanadium $VERSION."
 fi
+
+while IFS= read -r file; do
+    gh release upload "$TAG" "$file" --repo "$repo" --clobber
+done < "$files_list"
 
 echo "Published release $TAG to $repo"
