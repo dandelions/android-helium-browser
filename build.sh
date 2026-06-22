@@ -340,4 +340,3 @@ if [ "$BUILD_ARM64" = "1" ]; then
 fi
 echo "Build outputs:"
 ls -lh $release_outputs
-rm -rf $SCRIPT_DIR/keys

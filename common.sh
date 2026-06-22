@@ -41,6 +41,8 @@ set_keys() {
     if [ -n "${LOCAL_TEST_JKS:-}" ] && [ -n "${STORE_TEST_JKS:-}" ]; then
         printf '%s' "$LOCAL_TEST_JKS" | base64 -d > "$SCRIPT_DIR/keys/local.properties"
         printf '%s' "$STORE_TEST_JKS" | base64 -d > "$SCRIPT_DIR/keys/test.jks"
+    elif [ -s "$SCRIPT_DIR/keys/local.properties" ] && [ -s "$SCRIPT_DIR/keys/test.jks" ]; then
+        echo "Reusing existing local signing key from $SCRIPT_DIR/keys."
     else
         echo "Signing config was not provided; generating a local test signing key."
         generate_test_keys
