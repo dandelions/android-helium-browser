@@ -92,9 +92,19 @@ sed -i '/<ViewStub/{N;N;N;N;N;N; /optional_button_stub/a\
 sed -i 's|(ToolbarTablet) mToolbarLayout,|mToolbarLayout,|' chrome/android/java/src/org/chromium/chrome/browser/toolbar/ToolbarManager.java
 sed -i '/\/\/ Draw the signin button if visible./i\        { View extContainer = findViewById(R.id.extensions_toolbar_container); if (extContainer != null \&\& extContainer.getVisibility() != View.GONE \&\& extContainer.getWidth() != 0) { canvas.save(); ViewUtils.translateCanvasToView(mToolbarButtonsContainer, extContainer, canvas); extContainer.draw(canvas); canvas.restore(); } }' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarPhone.java
 
-# ext: pin
-sed -i '/Pref.PIN_EXTENSIONS_MENU_BUTTON, this::updateMenuButtonPinState);$/a\if (!mPrefService.getBoolean(Pref.PIN_EXTENSIONS_MENU_BUTTON)) { mContainer.findViewById(R.id.extensions_menu_button).setVisibility(View.GONE); }' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
-sed -i '/"ExtensionsToolbarCoordinatorImpl.requestLayoutWithViewUtils()");$/a\if (!isMenuButtonPinned()) { mContainer.findViewById(R.id.extensions_menu_button).setVisibility(View.GONE); }' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
+# ext: hub button
+sed -i '/mContainer = (LinearLayout) extensionsToolbarStub.inflate();/a\
+        mContainer.findViewById(R.id.extension_action_list).setVisibility(View.GONE);\
+        mContainer.findViewById(R.id.extensions_request_access_button).setVisibility(View.GONE);\
+        mContainer.findViewById(R.id.extensions_menu_button).setVisibility(View.VISIBLE);' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
+sed -i 's/return mPrefService.getBoolean(Pref.PIN_EXTENSIONS_MENU_BUTTON);/return true;/' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
+sed -i '/android:id="@+id\/extensions_menu_pin_menu_icon_button"/a\        android:visibility="gone"' chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_footer.xml
+sed -i '/return mExtensionActionListCoordinator.hasPoppedOutAction();/c\            return false;' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
+sed -i '/return mToolbarModel.get(ExtensionsToolbarProperties.IS_REQUEST_ACCESS_BUTTON_VISIBLE);/c\            return false;' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
+sed -i '/return mContainer.findViewById(R.id.extension_action_list).getVisibility()/,+1c\            return false;' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
+sed -i '/return mExtensionActionListCoordinator.fitActionsWithinWidth(availableWidth);/c\
+            mContainer.findViewById(R.id.extension_action_list).setVisibility(View.GONE);\
+            return 0;' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
 
 # ext: incognito
 sed -i 's|if (!context->IsOffTheRecord()) {|if (true) {|' extensions/browser/process_manager.cc
