@@ -38,21 +38,13 @@ sed -i 's/api::webstore_private::MV2DeprecationStatus::kHardDisable)));/api::web
 sed -i 's/bool g_allow_mv2_for_testing = false;/bool g_allow_mv2_for_testing = true;/' extensions/browser/manifest_v2_experiment_manager.cc
 
 # ext: isolate top-level navigations from extension blockers
-sed -i '/  \/\/ We do not want to notify extensions about XHR requests/i\
-  // Keep extension blockers off top-level navigations so a stalled or bad\
-  // extension cannot leave the browser showing a blank restored tab.\
-  // Subresources remain visible to blockers for content filtering.\
-  if (request.web_request_type == WebRequestResourceType::MAIN_FRAME &&\
-      listener.IsBlocking()) {\
-    return false;\
-  }\
-' extensions/browser/api/web_request/extension_web_request_event_router.cc
 sed -i '/case DNRRequestAction::Type::BLOCK:/,/case DNRRequestAction::Type::ALLOW:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' extensions/browser/api/web_request/extension_web_request_event_router.cc
 sed -i '/case DNRRequestAction::Type::REDIRECT:/,/case DNRRequestAction::Type::MODIFY_HEADERS:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' extensions/browser/api/web_request/extension_web_request_event_router.cc
 sed -i '/  const bool redirected =/i\
   if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) {\
     canceled_by_extension.reset();\
-    if (blocked_request.new_url) {\
+    if (blocked_request.new_url \&\& !blocked_request.new_url->is_empty() \&\&\
+        !blocked_request.new_url->SchemeIs("chrome-extension")) {\
       *blocked_request.new_url = GURL();\
     }\
   }\
@@ -62,10 +54,13 @@ sed -i '/  const bool redirected =/i\
 sed -i '/  bool inject_css = !script->css_scripts().empty() &&/,/      !script->js_scripts().empty() && script->run_location() == run_location;/c\
   // Delay extension document_start work in the outermost page until\
   // DOMContentLoaded. Dark-mode/style extensions can otherwise alter CSS or\
-  // script state before the page initializes, leaving some sites blank.\
+  // script state before the page initializes, leaving some sites blank. Keep\
+  // extension pages at their declared timing so new-tab/homepage extensions\
+  // such as iTabs can initialize normally.\
   const bool delay_main_frame_document_start =\
       host_id_.type == mojom::HostID::HostType::kExtensions &&\
-      web_frame->IsOutermostMainFrame();\
+      web_frame->IsOutermostMainFrame() &&\
+      !document_url.SchemeIs("chrome-extension");\
 \
   mojom::RunLocation script_run_location = script->run_location();\
   if (delay_main_frame_document_start &&\
