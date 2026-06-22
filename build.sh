@@ -122,6 +122,19 @@ reset_chromium_checkout() {
     fi
 }
 
+reset_chromium_submodules() {
+    git submodule foreach --recursive '
+        git am --abort >/dev/null 2>&1 || true
+        git rebase --abort >/dev/null 2>&1 || true
+        git merge --abort >/dev/null 2>&1 || true
+        git_dir=$(git rev-parse --git-dir 2>/dev/null || true)
+        if [ -n "$git_dir" ]; then
+            rm -rf "$git_dir/rebase-apply" "$git_dir/rebase-merge"
+        fi
+        git reset --hard >/dev/null 2>&1 || true
+    '
+}
+
 ensure_depot_tools_bootstrap() {
     export DEPOT_TOOLS_DIR="$SCRIPT_DIR/depot_tools"
     "$DEPOT_TOOLS_DIR/ensure_bootstrap"
@@ -272,6 +285,7 @@ target_os = ["android"]
 EOF
 git submodule foreach git config -f ./.git/config submodule.$name.ignore all
 git config --add remote.origin.fetch '+refs/tags/*:refs/tags/*'
+reset_chromium_submodules
 
 # https://grapheneos.org/build#browser-and-webview
 rm -rf $SCRIPT_DIR/vanadium/patches/*trichrome-{apk-build-targets,browser-apk-targets}.patch
@@ -286,6 +300,9 @@ patch_filter_list_downloader
 
 cd ..
 gclient sync -D --no-history --nohooks
+cd src
+reset_chromium_submodules
+cd ..
 gclient runhooks
 cd src
 rm -rf third_party/angle/third_party/VK-GL-CTS/
