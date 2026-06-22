@@ -119,6 +119,7 @@ reset_chromium_checkout() {
 
     if git rev-parse --verify HEAD >/dev/null 2>&1; then
         git reset --hard
+        git clean -fd -e out/
     fi
 }
 
@@ -132,6 +133,7 @@ reset_chromium_submodules() {
             rm -rf "$git_dir/rebase-apply" "$git_dir/rebase-merge"
         fi
         git reset --hard >/dev/null 2>&1 || true
+        git clean -fd -e out/ >/dev/null 2>&1 || true
     '
 }
 
