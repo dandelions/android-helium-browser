@@ -93,6 +93,7 @@ sed -i '/mContainer = (LinearLayout) extensionsToolbarStub.inflate();/a\
         mContainer.findViewById(R.id.extensions_request_access_button).setVisibility(View.GONE);\
         mContainer.findViewById(R.id.extensions_menu_button).setVisibility(View.VISIBLE);' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
 sed -i 's/return mPrefService.getBoolean(Pref.PIN_EXTENSIONS_MENU_BUTTON);/return true;/' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
+sed -i '/int visibility = shouldShowMenuIcon() ? View.VISIBLE : View.GONE;/c\        int visibility = View.VISIBLE;' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
 sed -i '/android:id="@+id\/extensions_menu_pin_menu_icon_button"/a\        android:visibility="gone"' chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_footer.xml
 sed -i '/return mExtensionActionListCoordinator.hasPoppedOutAction();/c\            return false;' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
 sed -i '/return mToolbarModel.get(ExtensionsToolbarProperties.IS_REQUEST_ACCESS_BUTTON_VISIBLE);/c\            return false;' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
@@ -125,8 +126,7 @@ sed -i 's/if ((!is_android || enable_vr) && !is_ios) {/if ((!is_android || enabl
 sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
 
 # crbug.com/404069963: ntp override
-sed -i '/feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);/d' chrome/browser/chrome_browser_field_trials.cc
-sed -i 's|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, BuildConfig.IS_DESKTOP_ANDROID)|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, false)|' chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+sed -i 's|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, BuildConfig.IS_DESKTOP_ANDROID)|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, true)|' chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 
 # crbug.com/431004500: incognito uaf
 sed -i '/for (int i = 0; i < tab_list->GetTabCount(); ++i) {/i if (!tab_list) { continue; }' chrome/browser/extensions/api/tabs/tabs_api.cc
