@@ -43,6 +43,70 @@ sed -i 's|--extensions-card-width: 400px;|--extensions-card-width: 96%;|' chrome
 sed -i 's|--cr-toolbar-field-width: 680px;|--cr-toolbar-field-width: 96%;|' chrome/browser/resources/extensions/shared_vars.css # page content
 sed -i 's|padding: 24px 60px 64px;|padding: 24px 0 64px;|' chrome/browser/resources/extensions/item_list.css # content wrapper
 
+# ext: install local zip/crx from developer mode
+sed -i '/loadUnpacked(): Promise<boolean>;/a\
+  /** Opens a file picker to install a local zip, crx, or user script. */\
+  installLocalExtensionFile(): Promise<boolean>;' chrome/browser/resources/extensions/toolbar.ts
+sed -i '/loadUnpacked() {/i\
+  installLocalExtensionFile() {\
+    return Promise.resolve(false);\
+  }' chrome/browser/resources/extensions/toolbar.ts
+sed -i '/loadUnpacked: HTMLElement,/a\
+    loadExtensionFile: HTMLElement,' chrome/browser/resources/extensions/toolbar.ts
+sed -i '/protected onLoadUnpackedClick_()/i\
+  protected onLoadExtensionFileClick_() {\
+    this.delegate.installLocalExtensionFile()\
+        .then((success) => {\
+          if (success) {\
+            const toastManager = getToastManager();\
+            toastManager.duration = TOAST_DURATION_MS;\
+            toastManager.show(this.i18n("toolbarLoadUnpackedDone"));\
+          }\
+        })\
+        .catch(loadError => {\
+          this.fire("load-error", loadError);\
+        });\
+    chrome.metricsPrivate.recordUserAction("Options_LoadLocalExtensionFile");\
+  }\
+' chrome/browser/resources/extensions/toolbar.ts
+sed -i '/<cr-button ?hidden="${!this.canLoadUnpacked_()}" id="loadUnpacked"/i\
+    <cr-button ?hidden="${!this.canLoadUnpacked_()}" id="loadExtensionFile"\
+        @click="${this.onLoadExtensionFileClick_}">\
+      Load ZIP/CRX\
+    </cr-button>' chrome/browser/resources/extensions/toolbar.html.ts
+sed -i '/loadUnpacked(): Promise<boolean> {/i\
+  installLocalExtensionFile(): Promise<boolean> {\
+    return this.chooseFilePath_(\
+        chrome.developerPrivate.SelectType.FILE,\
+        chrome.developerPrivate.FileType.LOAD)\
+        .then(path => {\
+          if (!path) {\
+            return false;\
+          }\
+          return chrome.developerPrivate.installDroppedFile().then(() => true);\
+        });\
+  }\
+' chrome/browser/resources/extensions/service.ts
+sed -i '/if (params->file_type == developer::FileType::kLoad) {/a\
+    if (params->select_type == developer::SelectType::kFile) {\
+      file_type_info.extensions.push_back({FILE_PATH_LITERAL("zip"),\
+                                           FILE_PATH_LITERAL("crx"),\
+                                           FILE_PATH_LITERAL("user.js")});\
+      file_type_info.include_all_files = true;\
+      file_type_index = 1;\
+    }' chrome/browser/extensions/api/developer_private/developer_private_functions.cc
+sed -i '/Respond(WithArguments(file.path().LossyDisplayName()));/i\
+  ui::FileInfo selected_file(file.path(), base::FilePath(file.display_name));\
+  if (MatchesExtension(selected_file, FILE_PATH_LITERAL(".zip")) ||\
+      MatchesExtension(selected_file, FILE_PATH_LITERAL(".crx")) ||\
+      MatchesExtension(selected_file, FILE_PATH_LITERAL(".user.js"))) {\
+    if (content::WebContents* web_contents = GetSenderWebContents()) {\
+      DeveloperPrivateAPI::Get(browser_context())->SetDraggedFile(\
+          web_contents, selected_file);\
+    }\
+  }' chrome/browser/extensions/api/developer_private/developer_private_functions.cc
+perl -0pi -e 's|#if BUILDFLAG\(IS_ANDROID\)\n  base::expected<void, std::string> result =\n      SetDroppedPath\(web_contents, browser_context\(\)\);\n  if \(!result\.has_value\(\)\) \{\n    return RespondNow\(Error\(result\.error\(\)\)\);\n  \}\n#endif  // BUILDFLAG\(IS_ANDROID\)|#if BUILDFLAG(IS_ANDROID)\n  {\n    DeveloperPrivateAPI* api = DeveloperPrivateAPI::Get(browser_context());\n    ui::FileInfo file = api->GetDraggedFile(web_contents);\n    if (file.path.empty()) {\n      base::expected<void, std::string> result =\n          SetDroppedPath(web_contents, browser_context());\n      if (!result.has_value()) {\n        return RespondNow(Error(result.error()));\n      }\n    }\n  }\n#endif  // BUILDFLAG(IS_ANDROID)|' chrome/browser/extensions/api/developer_private/developer_private_functions.cc
+
 # ext: mv2
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc

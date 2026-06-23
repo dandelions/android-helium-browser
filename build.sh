@@ -17,6 +17,7 @@ fi
 BUILD_ARM="${BUILD_ARM:-0}"
 BUILD_ARM64="${BUILD_ARM64:-1}"
 BUILD_AAB="${BUILD_AAB:-0}"
+NINJA_JOBS="${NINJA_JOBS:-14}"
 BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-$((($(date -u +%s) - 1577836800) / 60))}"
 if [ "$BUILD_ARM" != "1" ] && [ "$BUILD_ARM64" != "1" ]; then
     echo "At least one target ABI must be enabled. Set BUILD_ARM=1 or BUILD_ARM64=1." >&2
