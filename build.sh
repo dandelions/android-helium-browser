@@ -17,12 +17,23 @@ fi
 BUILD_ARM="${BUILD_ARM:-0}"
 BUILD_ARM64="${BUILD_ARM64:-1}"
 BUILD_AAB="${BUILD_AAB:-0}"
+BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-$((($(date -u +%s) - 1577836800) / 60))}"
 if [ "$BUILD_ARM" != "1" ] && [ "$BUILD_ARM64" != "1" ]; then
     echo "At least one target ABI must be enabled. Set BUILD_ARM=1 or BUILD_ARM64=1." >&2
     exit 1
 fi
 if [ "$BUILD_AAB" = "1" ] && [ "$BUILD_ARM64" != "1" ]; then
     echo "BUILD_AAB=1 requires BUILD_ARM64=1." >&2
+    exit 1
+fi
+case "$BUILD_VERSION_INCREMENT" in
+    ''|*[!0-9]*)
+        echo "BUILD_VERSION_INCREMENT must be a non-negative integer." >&2
+        exit 1
+        ;;
+esac
+if [ "$BUILD_VERSION_INCREMENT" -gt 13000000 ]; then
+    echo "BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT is too large for Chromium Android versionCode." >&2
     exit 1
 fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
@@ -36,6 +47,18 @@ git config --global user.email "helium-ci@localhost"
 append_common_gn_args() {
     if command -v ccache >/dev/null 2>&1; then
         echo 'cc_wrapper = "ccache"' >> "$1"
+    fi
+}
+
+set_gn_arg() {
+    local file="$1"
+    local name="$2"
+    local value="$3"
+
+    if grep -q "^${name}[[:space:]]*=" "$file"; then
+        sed -i "s|^${name}[[:space:]]*=.*|${name} = ${value}|" "$file"
+    else
+        printf '%s = %s\n' "$name" "$value" >> "$file"
     fi
 }
 
@@ -74,6 +97,8 @@ configure_out_dir() {
     if [ "$target_cpu" = "arm64" ]; then
         sed -i 's/target_cpu = "arm"/target_cpu = "arm64"/' "$desired_args"
     fi
+    set_gn_arg "$desired_args" ext_version_enabled true
+    set_gn_arg "$desired_args" ext_version_increment "\"$BUILD_VERSION_INCREMENT\""
     append_common_gn_args "$desired_args"
 
     if [ "${BUILD_STATE_RESTORED:-0}" = "1" ] && [ -f "$out_dir/build.ninja" ] && cmp -s "$desired_args" "$out_dir/args.gn"; then
@@ -321,7 +346,7 @@ restore_build_state
 
 sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get install -y libgcc-s1:i386
 mkdir -p out/tmp out/release
-echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB NINJA_JOBS=${NINJA_JOBS:-auto}"
+echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto}"
 
 if [ "$BUILD_ARM" = "1" ]; then
     configure_out_dir out/arm arm
