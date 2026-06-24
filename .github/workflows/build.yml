@@ -16,6 +16,26 @@ on:
         required: true
         type: boolean
         default: false
+      build_arm:
+        description: Build armeabi-v7a APK.
+        required: true
+        type: boolean
+        default: false
+      build_arm64:
+        description: Build arm64-v8a APK.
+        required: true
+        type: boolean
+        default: true
+      build_aab:
+        description: Build arm64 Android App Bundle.
+        required: true
+        type: boolean
+        default: false
+      ninja_jobs:
+        description: Number of Ninja jobs passed to build.sh.
+        required: true
+        type: string
+        default: '14'
       auto_continue:
         description: Start another 5.5h cache-warming run when the build times out.
         required: true
@@ -167,6 +187,10 @@ jobs:
         id: build
         env:
           RUNNER_LABEL: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-latest' }}
+          BUILD_ARM: ${{ inputs.build_arm && '1' || '0' }}
+          BUILD_ARM64: ${{ inputs.build_arm64 && '1' || '0' }}
+          BUILD_AAB: ${{ inputs.build_aab && '1' || '0' }}
+          NINJA_JOBS: ${{ inputs.ninja_jobs }}
         run: |
           set +e
           if [ "$RUNNER_LABEL" = "ubuntu-latest" ]; then
@@ -275,6 +299,10 @@ jobs:
           AUTO_CONTINUE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_continue }}
           CONTINUE_PASS: ${{ github.event_name == 'workflow_dispatch' && inputs.continue_pass || '0' }}
           MAX_CONTINUE_PASSES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_continue_passes || '3' }}
+          BUILD_ARM_INPUT: ${{ inputs.build_arm }}
+          BUILD_ARM64_INPUT: ${{ inputs.build_arm64 }}
+          BUILD_AAB_INPUT: ${{ inputs.build_aab }}
+          NINJA_JOBS_INPUT: ${{ inputs.ninja_jobs }}
         run: |
           if [ "$AUTO_CONTINUE" != "true" ]; then
             echo "Auto-continue is disabled."
@@ -298,6 +326,10 @@ jobs:
             --ref "$GITHUB_REF_NAME" \
             -f runner="$RUNNER_LABEL" \
             -f publish_release="$PUBLISH_RELEASE" \
+            -f build_arm="$BUILD_ARM_INPUT" \
+            -f build_arm64="$BUILD_ARM64_INPUT" \
+            -f build_aab="$BUILD_AAB_INPUT" \
+            -f ninja_jobs="$NINJA_JOBS_INPUT" \
             -f auto_continue=true \
             -f continue_pass="$next_pass" \
             -f max_continue_passes="$MAX_CONTINUE_PASSES" \
