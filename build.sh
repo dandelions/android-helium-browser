@@ -18,7 +18,15 @@ BUILD_ARM="${BUILD_ARM:-0}"
 BUILD_ARM64="${BUILD_ARM64:-1}"
 BUILD_AAB="${BUILD_AAB:-0}"
 NINJA_JOBS="${NINJA_JOBS:-14}"
+FAST_LOCAL_BUILD="${FAST_LOCAL_BUILD:-0}"
+SKIP_SOURCE_PREPARE="${SKIP_SOURCE_PREPARE:-0}"
+SKIP_SYSTEM_DEPS="${SKIP_SYSTEM_DEPS:-0}"
+CCACHE_MAX_SIZE="${CCACHE_MAX_SIZE:-30G}"
 BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-$((($(date -u +%s) - 1577836800) / 60))}"
+if [ "$FAST_LOCAL_BUILD" = "1" ]; then
+    SKIP_SOURCE_PREPARE=1
+    SKIP_SYSTEM_DEPS=1
+fi
 if [ "$BUILD_ARM" != "1" ] && [ "$BUILD_ARM64" != "1" ]; then
     echo "At least one target ABI must be enabled. Set BUILD_ARM=1 or BUILD_ARM64=1." >&2
     exit 1
@@ -39,11 +47,27 @@ if [ "$BUILD_VERSION_INCREMENT" -gt 13000000 ]; then
 fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
-sudo apt-get update
-sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2 openjdk-17-jre-headless
+if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
+    sudo apt-get update
+    sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2 openjdk-17-jre-headless
+fi
 set_keys
 git config --global user.name "Helium CI"
 git config --global user.email "helium-ci@localhost"
+
+setup_ccache() {
+    if command -v ccache >/dev/null 2>&1; then
+        export CCACHE_DIR="${CCACHE_DIR:-$HOME/.cache/ccache}"
+        export CCACHE_BASEDIR="${CCACHE_BASEDIR:-$SCRIPT_DIR}"
+        export CCACHE_COMPILERCHECK="${CCACHE_COMPILERCHECK:-content}"
+        export CCACHE_NOHASHDIR="${CCACHE_NOHASHDIR:-true}"
+        mkdir -p "$CCACHE_DIR"
+        ccache --set-config=max_size="$CCACHE_MAX_SIZE" >/dev/null 2>&1 || true
+        ccache --set-config=compression=true >/dev/null 2>&1 || true
+        ccache --set-config=file_clone=true >/dev/null 2>&1 || true
+    fi
+}
+setup_ccache
 
 append_common_gn_args() {
     if command -v ccache >/dev/null 2>&1; then
@@ -272,30 +296,43 @@ if __name__ == '__main__':
 PY
 }
 
-# https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
-if [ ! -d depot_tools/.git ]; then
-    git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
+if [ "$SKIP_SOURCE_PREPARE" = "1" ]; then
+    if [ ! -d depot_tools ]; then
+        echo "FAST_LOCAL_BUILD requires an existing depot_tools directory. Run a normal build once first." >&2
+        exit 1
+    fi
+    if [ ! -d chromium/src ]; then
+        echo "FAST_LOCAL_BUILD requires an existing chromium/src checkout. Run a normal build once first." >&2
+        exit 1
+    fi
+    export PATH="$PWD/depot_tools:$PATH"
+    ensure_depot_tools_bootstrap
+    cd chromium/src
 else
-    git -C depot_tools fetch --depth 1 origin
-    git -C depot_tools reset --hard origin/HEAD
-fi
-export PATH="$PWD/depot_tools:$PATH"
-ensure_depot_tools_bootstrap
-mkdir -p chromium/src
-cd chromium/src
-git init
-git config user.name "Helium CI"
-git config user.email "helium-ci@localhost"
-reset_chromium_checkout
-if ! git remote get-url origin >/dev/null 2>&1; then
-    git remote add origin $CHROMIUM_SOURCE
-else
-    git remote set-url origin $CHROMIUM_SOURCE
-fi
-git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
-git checkout -f $VERSION
-export COMMIT=$(git show-ref -s $VERSION | head -n1)
-cat > ../.gclient <<EOF
+    # https://github.com/uazo/cromite/blob/master/tools/images/chr-source/prepare-build.sh
+    if [ ! -d depot_tools/.git ]; then
+        git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
+    else
+        git -C depot_tools fetch --depth 1 origin
+        git -C depot_tools reset --hard origin/HEAD
+    fi
+    export PATH="$PWD/depot_tools:$PATH"
+    ensure_depot_tools_bootstrap
+    mkdir -p chromium/src
+    cd chromium/src
+    git init
+    git config user.name "Helium CI"
+    git config user.email "helium-ci@localhost"
+    reset_chromium_checkout
+    if ! git remote get-url origin >/dev/null 2>&1; then
+        git remote add origin $CHROMIUM_SOURCE
+    else
+        git remote set-url origin $CHROMIUM_SOURCE
+    fi
+    git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
+    git checkout -f $VERSION
+    export COMMIT=$(git show-ref -s $VERSION | head -n1)
+    cat > ../.gclient <<EOF
 solutions = [
   {
     "name": "src",
@@ -311,30 +348,33 @@ solutions = [
 ]
 target_os = ["android"]
 EOF
-git submodule foreach git config -f ./.git/config submodule.$name.ignore all
-git config --add remote.origin.fetch '+refs/tags/*:refs/tags/*'
-reset_chromium_submodules
+    git submodule foreach git config -f ./.git/config submodule.$name.ignore all
+    git config --add remote.origin.fetch '+refs/tags/*:refs/tags/*'
+    reset_chromium_submodules
 
-# https://grapheneos.org/build#browser-and-webview
-rm -rf $SCRIPT_DIR/vanadium/patches/*trichrome-{apk-build-targets,browser-apk-targets}.patch
-rm -rf $SCRIPT_DIR/vanadium/patches/*{detailed,supported}-language*.patch
-rm -rf $SCRIPT_DIR/vanadium/patches/*component-updates.patch
-# rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
-replace "$SCRIPT_DIR/vanadium/patches" "VANADIUM" "HELIUM"
-replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
-replace "$SCRIPT_DIR/vanadium/patches" "vanadium" "helium"
-git am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
-patch_filter_list_downloader
+    # https://grapheneos.org/build#browser-and-webview
+    rm -rf $SCRIPT_DIR/vanadium/patches/*trichrome-{apk-build-targets,browser-apk-targets}.patch
+    rm -rf $SCRIPT_DIR/vanadium/patches/*{detailed,supported}-language*.patch
+    rm -rf $SCRIPT_DIR/vanadium/patches/*component-updates.patch
+    # rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
+    replace "$SCRIPT_DIR/vanadium/patches" "VANADIUM" "HELIUM"
+    replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
+    replace "$SCRIPT_DIR/vanadium/patches" "vanadium" "helium"
+    git am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
+    patch_filter_list_downloader
 
-cd ..
-gclient sync -D --no-history --nohooks
-cd src
-reset_chromium_submodules
-cd ..
-gclient runhooks
-cd src
-rm -rf third_party/angle/third_party/VK-GL-CTS/
-./build/install-build-deps.sh --no-prompt
+    cd ..
+    gclient sync -D --no-history --nohooks
+    cd src
+    reset_chromium_submodules
+    cd ..
+    gclient runhooks
+    cd src
+    rm -rf third_party/angle/third_party/VK-GL-CTS/
+    if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
+        ./build/install-build-deps.sh --no-prompt
+    fi
+fi
 
 # https://github.com/imputnet/helium-linux/blob/main/scripts/shared.sh
 # python3 "${SCRIPT_DIR}/helium/utils/name_substitution.py" --sub -t .
@@ -342,10 +382,16 @@ rm -rf third_party/angle/third_party/VK-GL-CTS/
 # python3 "${SCRIPT_DIR}/helium/utils/generate_resources.py" "${SCRIPT_DIR}/helium/resources/generate_resources.txt" "${SCRIPT_DIR}/helium/resources"
 # python3 "${SCRIPT_DIR}/helium/utils/replace_resources.py" "${SCRIPT_DIR}/helium/resources/helium_resources.txt" "${SCRIPT_DIR}/helium/resources" .
 
-source $SCRIPT_DIR/patch.sh
+if [ "$SKIP_SOURCE_PREPARE" != "1" ]; then
+    source $SCRIPT_DIR/patch.sh
+fi
 restore_build_state
 
-sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get install -y libgcc-s1:i386
+if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
+    sudo dpkg --add-architecture i386
+    sudo apt-get update
+    sudo apt-get install -y libgcc-s1:i386
+fi
 mkdir -p out/tmp out/release
 echo "Build options: BUILD_ARM=$BUILD_ARM BUILD_ARM64=$BUILD_ARM64 BUILD_AAB=$BUILD_AAB BUILD_VERSION_INCREMENT=$BUILD_VERSION_INCREMENT NINJA_JOBS=${NINJA_JOBS:-auto}"
 

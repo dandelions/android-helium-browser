@@ -67,6 +67,7 @@ concurrency:
 env:
   DEBIAN_FRONTEND: noninteractive
   BUILD_STATE_ARTIFACT: helium-build-state
+  CCACHE_MAX_SIZE: 8G
 
 jobs:
   build:
@@ -155,7 +156,7 @@ jobs:
           echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
           echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
           echo "CCACHE_NOHASHDIR=true" >> "$GITHUB_ENV"
-          ccache --set-config=max_size=5G
+          ccache --set-config=max_size="$CCACHE_MAX_SIZE"
           ccache --set-config=compression=true
           ccache --zero-stats || true
 
