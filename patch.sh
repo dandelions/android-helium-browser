@@ -31,6 +31,7 @@ sed -i 's|--cr-toolbar-field-width: 680px;|--cr-toolbar-field-width: 96%;|' chro
 sed -i 's|padding: 24px 60px 64px;|padding: 24px 0 64px;|' chrome/browser/resources/extensions/item_list.css # content wrapper
 
 # ext: install local zip/crx from developer mode
+sed -i '/info.in_developer_mode =/,/prefs::kExtensionsUIDeveloperMode);/c\  info.in_developer_mode = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 sed -i '/info.can_load_unpacked =/,/->HasAllowlistedExtension();/c\  info.can_load_unpacked = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 sed -i '/loadUnpacked(): Promise<boolean>;/a\
   /** Opens a file picker to install a local zip, crx, or user script. */\
@@ -58,10 +59,15 @@ sed -i '/protected onLoadUnpackedClick_()/i\
   }\
 ' chrome/browser/resources/extensions/toolbar.ts
 sed -i '/<cr-button ?hidden="${!this.canLoadUnpacked_()}" id="loadUnpacked"/i\
-    <cr-button ?hidden="${!this.canLoadUnpacked_()}" id="loadExtensionFile"\
+    <cr-button id="loadExtensionFile"\
         @click="${this.onLoadExtensionFileClick_}">\
       Load ZIP/CRX\
     </cr-button>' chrome/browser/resources/extensions/toolbar.html.ts
+sed -i 's|<cr-button ?hidden="${!this.canLoadUnpacked_()}" id="loadUnpacked"|<cr-button id="loadUnpacked"|' chrome/browser/resources/extensions/toolbar.html.ts
+sed -i '/protected canLoadUnpacked_()/,/^  }/c\
+  protected canLoadUnpacked_() {\
+    return true;\
+  }' chrome/browser/resources/extensions/toolbar.ts
 sed -i '/loadUnpacked(): Promise<boolean> {/i\
   installLocalExtensionFile(): Promise<boolean> {\
     return this.chooseFilePath_(\
@@ -71,7 +77,8 @@ sed -i '/loadUnpacked(): Promise<boolean> {/i\
           if (!path) {\
             return false;\
           }\
-          return chrome.developerPrivate.installDroppedFile().then(() => true);\
+          return Promise.resolve(chrome.developerPrivate.installDroppedFile())\
+              .then(() => true);\
         });\
   }\
 ' chrome/browser/resources/extensions/service.ts
