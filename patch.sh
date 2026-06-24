@@ -137,26 +137,33 @@ sed -i '/  const bool redirected =/i\
 ' extensions/browser/api/web_request/extension_web_request_event_router.cc
 
 # ext: keep early content-script injection from breaking page startup
+sed -i '/extensions_features::kExtensionsBackgroundCompilation));/a\
+  if (host_id_.type == mojom::HostID::HostType::kExtensions &&\
+      web_frame->IsOutermostMainFrame() &&\
+      !document_url.SchemeIs("chrome-extension")) {\
+    return;\
+  }' extensions/renderer/user_script_set.cc
 sed -i '/  bool inject_css = !script->css_scripts().empty() &&/,/      !script->js_scripts().empty() && script->run_location() == run_location;/c\
-  // Delay extension document_start work in the outermost page until\
-  // DOMContentLoaded. Dark-mode/style extensions can otherwise alter CSS or\
-  // script state before the page initializes, leaving some sites blank. Keep\
+  // Delay extension main-frame work until the page is idle. Dark-mode/style\
+  // and filtering extensions can otherwise alter CSS or script state before\
+  // the page initializes, leaving some sites blank. Keep\
   // extension pages at their declared timing so new-tab/homepage extensions\
   // such as iTabs can initialize normally.\
-  const bool delay_main_frame_document_start =\
+  const bool delay_main_frame_extension_scripts =\
       host_id_.type == mojom::HostID::HostType::kExtensions &&\
       web_frame->IsOutermostMainFrame() &&\
       !document_url.SchemeIs("chrome-extension");\
 \
   mojom::RunLocation script_run_location = script->run_location();\
-  if (delay_main_frame_document_start &&\
-      script_run_location == mojom::RunLocation::kDocumentStart) {\
-    script_run_location = mojom::RunLocation::kDocumentEnd;\
+  if (delay_main_frame_extension_scripts &&\
+      (script_run_location == mojom::RunLocation::kDocumentStart ||\
+       script_run_location == mojom::RunLocation::kDocumentEnd)) {\
+    script_run_location = mojom::RunLocation::kDocumentIdle;\
   }\
 \
   const mojom::RunLocation css_run_location =\
-      delay_main_frame_document_start ? mojom::RunLocation::kDocumentEnd\
-                                      : mojom::RunLocation::kDocumentStart;\
+      delay_main_frame_extension_scripts ? mojom::RunLocation::kDocumentIdle\
+                                         : mojom::RunLocation::kDocumentStart;\
   bool inject_css =\
       !script->css_scripts().empty() && run_location == css_run_location;\
   bool inject_js =\
@@ -178,8 +185,6 @@ sed -i '/Pref.PIN_EXTENSIONS_MENU_BUTTON, this::updateMenuButtonPinState);$/a\if
 sed -i '/"ExtensionsToolbarCoordinatorImpl.requestLayoutWithViewUtils()");$/a\mContainer.findViewById(R.id.extensions_menu_button).setVisibility(isMenuButtonPinned() ? View.VISIBLE : View.GONE);' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
 
 # ext: incognito
-sed -i 's|if (!context->IsOffTheRecord()) {|if (true) {|' extensions/browser/process_manager.cc
-sed -i 's|public static boolean shouldOpenIncognitoAsWindow() {|public static boolean shouldOpenIncognitoAsWindow() { if (true) return true;|' chrome/browser/incognito/android/java/src/org/chromium/chrome/browser/incognito/IncognitoUtils.java
 
 # ext: priority
 sed -i 's|host_contents_->SetColorProviderSource(NoOpColorProviderSource::Get());|&\nhost_contents_->SetPrimaryPageImportance(content::ChildProcessImportance::IMPORTANT, content::ChildProcessImportance::NORMAL);|' extensions/browser/extension_host.cc
@@ -189,7 +194,6 @@ sed -i '/content::WebContents\* web_contents = show_params->GetParentWebContents
 sed -i 's|view_android->GetWindowAndroid();|show_params->GetParentWindow();|' chrome/browser/ui/android/extensions/extension_install_dialog_view_android.cc
 
 # tmp
-sed -i 's|if (!IncognitoUtils.shouldOpenIncognitoAsWindow() \|\| isIncognitoShowing()) {|if (true) {|' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 sed -i 's/BASE_FEATURE(kAndroidSearchInSettings,"SearchInSettings", base::FEATURE_DISABLED_BY_DEFAULT);/BASE_FEATURE(kAndroidSearchInSettings,"SearchInSettings", base::FEATURE_ENABLED_BY_DEFAULT);/' chrome/browser/flags/android/chrome_feature_list.cc
 for file in components/omnibox/browser/autocomplete_match.h components/omnibox/browser/autocomplete_match.cc components/omnibox/browser/actions/omnibox_action.h components/omnibox/browser/location_bar_model_impl.cc components/omnibox/browser/location_bar_model_util.cc; do
 sed -i '/#include "build\/build_config.h"/i #include "build/android_buildflags.h"' $file
@@ -202,6 +206,34 @@ sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFits
 
 # crbug.com/404069963: ntp override
 sed -i 's|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, BuildConfig.IS_DESKTOP_ANDROID)|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, true)|' chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+
+# crbug.com/helium: startup blank-screen recovery guards
+sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\
+import org.chromium.components.embedder_support.util.UrlConstants;' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
+sed -i '/private static boolean sDeferredStartupComplete;/a\
+\
+    private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\
+        return TextUtils.isEmpty(url)\
+                || url.startsWith("chrome-extension://");\
+    }\
+\
+    private static String safeUrlForRestore(@Nullable String url) {\
+        return shouldReplaceUrlForRestore(url) ? UrlConstants.VERSION_URL : assumeNonNull(url);\
+    }' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
+sed -i '/boolean isIncognito = isIncognitoTabBeingRestored(tabToRestore, tabState);/a\
+        if (shouldReplaceUrlForRestore(tabToRestore.url)) {\
+            tabState = null;\
+            tabToRestore =\
+                    new TabRestoreDetails(\
+                            tabToRestore.id,\
+                            tabToRestore.originalIndex,\
+                            tabToRestore.isIncognito,\
+                            safeUrlForRestore(tabToRestore.url),\
+                            tabToRestore.fromMerge);\
+        }' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
+perl -0pi -e 's|    \@Override\n    public void onStartWithNative\(\) \{|    private void clearVolatileRendererCaches() {\n        PostTask.postTask(\n                TaskTraits.BEST_EFFORT_MAY_BLOCK,\n                () -> {\n                    String dataDir = org.chromium.base.PathUtils.getDataDirectory();\n                    String[] paths = {\n                        "Default/GPUCache",\n                        "Default/GrShaderCache",\n                        "Default/ShaderCache",\n                        "Default/Code Cache/js",\n                        "Default/Code Cache/wasm"\n                    };\n                    for (String path : paths) {\n                        org.chromium.base.FileUtils.recursivelyDeleteFile(\n                                new java.io.File(dataDir, path),\n                                org.chromium.base.FileUtils.DELETE_ALL);\n                    }\n                });\n    }\n\n    \@Override\n    public void onStartWithNative() {|' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+sed -i '/super.onStartWithNative();/a\
+        clearVolatileRendererCaches();' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 
 # crbug.com/431004500: incognito uaf
 sed -i '/for (int i = 0; i < tab_list->GetTabCount(); ++i) {/i if (!tab_list) { continue; }' chrome/browser/extensions/api/tabs/tabs_api.cc
