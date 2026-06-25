@@ -29,6 +29,7 @@ sed -i '/coordinator.showExtensionsMenu();/c\            if (coordinator != null
                     currentTab.loadUrl(params);\
                 }\
             }' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+sed -i 's|(view) -> mMenuBridge.executeAction(entry.id))|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_URL + "?options=" + entry.id))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
 
 # search
 sed -i 's|BASE_FEATURE(kOmniboxSiteSearch, DISABLED);|BASE_FEATURE(kOmniboxSiteSearch, ENABLED);|' components/omnibox/common/omnibox_features.cc
@@ -206,6 +207,10 @@ sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFits
 
 # crbug.com/404069963: ntp override
 sed -i 's|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, BuildConfig.IS_DESKTOP_ANDROID)|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, true)|' chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
+
+# crbug.com/helium: expose per-site forced dark mode in the app menu
+perl -0pi -e 's/BASE_FEATURE\(kDarkenWebsitesCheckboxInThemesSetting,\n\s*base::FEATURE_DISABLED_BY_DEFAULT\);/BASE_FEATURE(kDarkenWebsitesCheckboxInThemesSetting,\n             base::FEATURE_ENABLED_BY_DEFAULT);/' components/content_settings/core/common/features.cc
+sed -i 's|return currentTab != null && !isNativePage && isFlagEnabled && isFeatureEnabled;|return currentTab != null && !isNativePage;|' chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
 
 # crbug.com/helium: startup blank-screen recovery guards
 sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\
