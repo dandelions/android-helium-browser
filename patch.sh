@@ -44,31 +44,10 @@ sed -i 's|height: calc(var(--md-toolbar-height) + 58px);|height: calc(var(--md-t
 sed -i 's|--extensions-card-width: 400px;|--extensions-card-width: 96%;|' chrome/browser/resources/extensions/item_list.css # card width
 sed -i 's|--cr-toolbar-field-width: 680px;|--cr-toolbar-field-width: 96%;|' chrome/browser/resources/extensions/shared_vars.css # page content
 sed -i 's|padding: 24px 60px 64px;|padding: 24px 0 64px;|' chrome/browser/resources/extensions/item_list.css # content wrapper
-sed -i '$a\
-/* Helium: fit developer action buttons on narrow Android screens. */\
-#devDrawer[expanded] {\
-  height: auto;\
-  min-height: calc(var(--button-row-height) + var(--border-bottom-height));\
-}\
-\
-#buttonStrip {\
-  box-sizing: border-box;\
-  display: flex;\
-  flex-wrap: wrap;\
-  gap: 8px 12px;\
-  padding: var(--padding-top-bottom) 24px;\
-  position: static;\
-  width: 100%;\
-}\
-\
-#devDrawer[expanded] #buttonStrip {\
-  top: auto;\
-}\
-\
-#buttonStrip cr-button {\
-  margin-inline-end: 0;\
-  max-width: 100%;\
-}' chrome/browser/resources/extensions/toolbar.css
+perl -0pi -e 's/#devDrawer\[expanded\] #buttonStrip \{\n  top: 0;\n\}/#devDrawer[expanded] #buttonStrip {\n  top: auto;\n}/' chrome/browser/resources/extensions/toolbar.css
+perl -0pi -e 's/#devDrawer\[expanded\] \{\n  height: calc\(var\(--button-row-height\) \+ var\(--border-bottom-height\)\);\n\}/#devDrawer[expanded] {\n  height: auto;\n  min-height: calc(var(--button-row-height) + var(--border-bottom-height));\n}/' chrome/browser/resources/extensions/toolbar.css
+perl -0pi -e 's/#buttonStrip \{\n  margin-inline-end: auto;\n  margin-inline-start: 24px;\n  padding: var\(--padding-top-bottom\) 0;\n  position: absolute;\n  top: calc\(var\(--button-row-height\) \* -1\);\n  transition: top var\(--drawer-transition\);\n  \/\* Prevent selection of the blank space between buttons\. \*\/\n  user-select: none;\n  width: 100%;\n\}/#buttonStrip {\n  box-sizing: border-box;\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px 12px;\n  margin-inline-end: auto;\n  margin-inline-start: 0;\n  padding: var(--padding-top-bottom) 24px;\n  position: static;\n  transition: top var(--drawer-transition);\n  user-select: none;\n  width: 100%;\n}/' chrome/browser/resources/extensions/toolbar.css
+perl -0pi -e 's/#buttonStrip cr-button \{\n  margin-inline-end: 16px;\n\}/#buttonStrip cr-button {\n  margin-inline-end: 0;\n  max-width: 100%;\n}/' chrome/browser/resources/extensions/toolbar.css
 
 # ext: install local zip/crx from developer mode
 sed -i '/info.in_developer_mode =/,/prefs::kExtensionsUIDeveloperMode);/c\  info.in_developer_mode = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
