@@ -105,10 +105,25 @@ sed -i '/if (params->file_type == developer::FileType::kLoad) {/a\
       file_type_index = 1;\
     }' chrome/browser/extensions/api/developer_private/developer_private_functions.cc
 sed -i '/Respond(WithArguments(file.path().LossyDisplayName()));/i\
-  ui::FileInfo selected_file(file.path(), base::FilePath(file.display_name));\
-  if (MatchesExtension(selected_file, FILE_PATH_LITERAL(".zip")) ||\
-      MatchesExtension(selected_file, FILE_PATH_LITERAL(".crx")) ||\
-      MatchesExtension(selected_file, FILE_PATH_LITERAL(".user.js"))) {\
+  base::FilePath selected_path = file.path();\
+  ui::FileInfo display_file(selected_path, base::FilePath(file.display_name));\
+  if (MatchesExtension(display_file, FILE_PATH_LITERAL(".zip")) ||\
+      MatchesExtension(display_file, FILE_PATH_LITERAL(".crx")) ||\
+      MatchesExtension(display_file, FILE_PATH_LITERAL(".user.js"))) {\
+    base::FilePath dragged_path = selected_path;\
+    base::FilePath persisted_path;\
+    base::FilePath local_extension_dir =\
+        Profile::FromBrowserContext(browser_context())\
+            ->GetPath()\
+            .Append(FILE_PATH_LITERAL("Local Extension Install Files"));\
+    if (base::CreateDirectory(local_extension_dir) &&\
+        base::CreateTemporaryFileInDir(local_extension_dir, &persisted_path) &&\
+        base::CopyFile(selected_path, persisted_path)) {\
+      dragged_path = persisted_path;\
+    } else if (!persisted_path.empty()) {\
+      base::DeleteFile(persisted_path);\
+    }\
+    ui::FileInfo selected_file(dragged_path, base::FilePath(file.display_name));\
     if (content::WebContents* web_contents = GetSenderWebContents()) {\
       DeveloperPrivateAPI::Get(browser_context())->SetDraggedFile(\
           web_contents, selected_file);\
@@ -119,10 +134,14 @@ perl -0pi -e 's|#if BUILDFLAG\(IS_ANDROID\)\n  base::expected<void, std::string>
 # ext: mv2
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
+perl -0pi -e 's|bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy\(\n    const Extension& extension\) \{\n.*?\n\}\n\nbool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment|bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy(\n    const Extension& extension) {\n  return true;\n}\n\nbool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment|s' chrome/browser/extensions/extension_management.cc
 perl -0pi -e 's/^\s+"proxy\.json",\n//mg; s/^(schema_sources_ = \[\n)/$1  "proxy.json",\n/' chrome/common/extensions/api/api_sources.gni
 perl -0pi -e 's/^\s+"browser_action\.json",\n//mg; s/^\s+"page_action\.json",\n//mg; s/^(uncompiled_sources_ = \[\n)/$1  "browser_action.json",\n  "page_action.json",\n/' chrome/common/extensions/api/api_sources.gni
 sed -i 's/api::webstore_private::MV2DeprecationStatus::kHardDisable)));/api::webstore_private::MV2DeprecationStatus::kNone)));/' chrome/browser/extensions/api/webstore_private/webstore_private_api.cc
 sed -i 's/bool g_allow_mv2_for_testing = false;/bool g_allow_mv2_for_testing = true;/' extensions/browser/manifest_v2_experiment_manager.cc
+
+# android: require explicit user confirmation before launching external apps
+perl -0pi -e 's|            if \(debug\(\)\) Log\.i\(TAG, "startActivity"\);\n            context\.startActivity\(intent\);\n            recordExternalNavigationDispatched\(intent\);\n            mDelegate\.reportIntentToSafeBrowsing\(intent\);|            if (debug()) Log.i(TAG, "startActivity");\n            Intent launchIntent = intent;\n            if (!Intent.ACTION_CHOOSER.equals(intent.getAction())\n                    \&\& !Intent.ACTION_PICK_ACTIVITY.equals(intent.getAction())) {\n                launchIntent = Intent.createChooser(intent, null);\n            }\n            context.startActivity(launchIntent);\n            recordExternalNavigationDispatched(intent);\n            mDelegate.reportIntentToSafeBrowsing(intent);|' components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
 
 # ext: isolate top-level navigations from extension blockers
 sed -i '/case DNRRequestAction::Type::BLOCK:/,/case DNRRequestAction::Type::ALLOW:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' extensions/browser/api/web_request/extension_web_request_event_router.cc
