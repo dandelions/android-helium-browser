@@ -40,9 +40,35 @@ sed -i 's|#if BUILDFLAG(IS_ANDROID)|#if 0|' content/public/renderer/render_frame
 # viewport
 sed -i 's|constexpr gfx::Size kMinSize = {25, 25};|constexpr gfx::Size kMinSize = {256, 25};|' chrome/browser/ui/android/extensions/extension_action_popup_contents.cc
 sed -i 's|<meta name="color-scheme" content="light dark">|&\n<meta name="viewport" content="width=device-width">|' chrome/browser/resources/extensions/extensions.html
+sed -i 's|height: calc(var(--md-toolbar-height) + 58px);|height: calc(var(--md-toolbar-height) + 104px);|' chrome/browser/resources/extensions/extensions.html
 sed -i 's|--extensions-card-width: 400px;|--extensions-card-width: 96%;|' chrome/browser/resources/extensions/item_list.css # card width
 sed -i 's|--cr-toolbar-field-width: 680px;|--cr-toolbar-field-width: 96%;|' chrome/browser/resources/extensions/shared_vars.css # page content
 sed -i 's|padding: 24px 60px 64px;|padding: 24px 0 64px;|' chrome/browser/resources/extensions/item_list.css # content wrapper
+sed -i '$a\
+/* Helium: fit developer action buttons on narrow Android screens. */\
+#devDrawer[expanded] {\
+  height: auto;\
+  min-height: calc(var(--button-row-height) + var(--border-bottom-height));\
+}\
+\
+#buttonStrip {\
+  box-sizing: border-box;\
+  display: flex;\
+  flex-wrap: wrap;\
+  gap: 8px 12px;\
+  padding: var(--padding-top-bottom) 24px;\
+  position: static;\
+  width: 100%;\
+}\
+\
+#devDrawer[expanded] #buttonStrip {\
+  top: auto;\
+}\
+\
+#buttonStrip cr-button {\
+  margin-inline-end: 0;\
+  max-width: 100%;\
+}' chrome/browser/resources/extensions/toolbar.css
 
 # ext: install local zip/crx from developer mode
 sed -i '/info.in_developer_mode =/,/prefs::kExtensionsUIDeveloperMode);/c\  info.in_developer_mode = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
@@ -110,20 +136,26 @@ sed -i '/Respond(WithArguments(file.path().LossyDisplayName()));/i\
   if (MatchesExtension(display_file, FILE_PATH_LITERAL(".zip")) ||\
       MatchesExtension(display_file, FILE_PATH_LITERAL(".crx")) ||\
       MatchesExtension(display_file, FILE_PATH_LITERAL(".user.js"))) {\
+    base::FilePath selected_name = file.display_name.empty()\
+        ? selected_path.BaseName()\
+        : base::FilePath(file.display_name).BaseName();\
     base::FilePath dragged_path = selected_path;\
-    base::FilePath persisted_path;\
+    base::FilePath persisted_dir;\
     base::FilePath local_extension_dir =\
         Profile::FromBrowserContext(browser_context())\
             ->GetPath()\
             .Append(FILE_PATH_LITERAL("Local Extension Install Files"));\
     if (base::CreateDirectory(local_extension_dir) &&\
-        base::CreateTemporaryFileInDir(local_extension_dir, &persisted_path) &&\
-        base::CopyFile(selected_path, persisted_path)) {\
-      dragged_path = persisted_path;\
-    } else if (!persisted_path.empty()) {\
-      base::DeleteFile(persisted_path);\
+        base::CreateTemporaryDirInDir(\
+            local_extension_dir, FILE_PATH_LITERAL("install-"), &persisted_dir)) {\
+      base::FilePath persisted_path = persisted_dir.Append(selected_name);\
+      if (base::CopyFile(selected_path, persisted_path)) {\
+        dragged_path = persisted_path;\
+      } else {\
+        base::DeletePathRecursively(persisted_dir);\
+      }\
     }\
-    ui::FileInfo selected_file(dragged_path, base::FilePath(file.display_name));\
+    ui::FileInfo selected_file(dragged_path, selected_name);\
     if (content::WebContents* web_contents = GetSenderWebContents()) {\
       DeveloperPrivateAPI::Get(browser_context())->SetDraggedFile(\
           web_contents, selected_file);\
@@ -135,6 +167,7 @@ perl -0pi -e 's|#if BUILDFLAG\(IS_ANDROID\)\n  base::expected<void, std::string>
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Unsupported, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
 sed -i 's/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_ENABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionManifestV2Disabled, base::FEATURE_DISABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
 perl -0pi -e 's|bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy\(\n    const Extension& extension\) \{\n.*?\n\}\n\nbool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment|bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy(\n    const Extension& extension) {\n  return true;\n}\n\nbool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment|s' chrome/browser/extensions/extension_management.cc
+perl -0pi -e 's|  if \(AllowedByEnterprisePolicy\(extension->id\(\)\) &&\n      !ExtensionsBrowserClient::Get\(\)\n           ->GetExtensionManagementClient\(context_\)\n           ->IsForceInstalledInLowTrustEnvironment\(\*extension\)\) \{\n    return false;\n  \}\n\n  bool verified = true;|  if (AllowedByEnterprisePolicy(extension->id()) &&\n      !ExtensionsBrowserClient::Get()\n           ->GetExtensionManagementClient(context_)\n           ->IsForceInstalledInLowTrustEnvironment(*extension)) {\n    return false;\n  }\n  if (!IsFromStore(*extension, context_)) {\n    return false;\n  }\n\n  bool verified = true;|' extensions/browser/install_verifier.cc
 perl -0pi -e 's/^\s+"proxy\.json",\n//mg; s/^(schema_sources_ = \[\n)/$1  "proxy.json",\n/' chrome/common/extensions/api/api_sources.gni
 perl -0pi -e 's/^\s+"browser_action\.json",\n//mg; s/^\s+"page_action\.json",\n//mg; s/^(uncompiled_sources_ = \[\n)/$1  "browser_action.json",\n  "page_action.json",\n/' chrome/common/extensions/api/api_sources.gni
 sed -i 's/api::webstore_private::MV2DeprecationStatus::kHardDisable)));/api::webstore_private::MV2DeprecationStatus::kNone)));/' chrome/browser/extensions/api/webstore_private/webstore_private_api.cc
