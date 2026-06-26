@@ -206,6 +206,7 @@ sed -i 's/if ((!is_android || enable_vr) && !is_ios) {/if ((!is_android || enabl
 sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
 
 # crbug.com/404069963: ntp override
+sed -i '/feature_overrides.EnableFeature(chrome::android::kChromeNativeUrlOverriding);/d' chrome/browser/chrome_browser_field_trials.cc
 sed -i 's|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, BuildConfig.IS_DESKTOP_ANDROID)|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, true)|' chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
 
 # crbug.com/helium: expose per-site forced dark mode in the app menu
