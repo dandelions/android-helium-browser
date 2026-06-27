@@ -15,8 +15,9 @@ BRIDGE=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser
 TOOLBAR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsToolbarCoordinatorImpl.java
 CTA=chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 VERIFIER=chrome/browser/extensions/chrome_content_verifier_delegate.cc
+PROFILE_INFO=chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 
-for file in "$BRIDGE" "$TOOLBAR" "$CTA" "$VERIFIER"; do
+for file in "$BRIDGE" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -28,6 +29,10 @@ sed -i 's|                ("std::string") String extensionId);|                @
 
 # Keep local zip/crx/unpacked extensions out of WebStore content verification.
 sed -i 's|if (!InstallVerifier::IsFromStore(extension, context_)) {|if (!extension.from_webstore()) {|' "$VERIFIER"
+
+# Do not fake developer mode in the UI. Fresh installs should start with
+# developer mode disabled, and the load-unpacked backend checks the real pref.
+perl -0pi -e 's|  info\.in_developer_mode = true;|  info.in_developer_mode = !info.is_child_account \&\&\n                           prefs->GetBoolean(prefs::kExtensionsUIDeveloperMode);|' "$PROFILE_INFO"
 
 # Startup stability: do not purge renderer caches automatically on every start.
 sed -i '/clearVolatileRendererCaches();/d' "$CTA"

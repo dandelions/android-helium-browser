@@ -57,7 +57,6 @@ perl -0pi -e 's/#buttonStrip \{\n  margin-inline-end: auto;\n  margin-inline-sta
 perl -0pi -e 's/#buttonStrip cr-button \{\n  margin-inline-end: 16px;\n\}/#buttonStrip cr-button {\n  margin-inline-end: 0;\n  max-width: 100%;\n}/' chrome/browser/resources/extensions/toolbar.css
 
 # ext: install local zip/crx from developer mode
-sed -i '/info.in_developer_mode =/,/prefs::kExtensionsUIDeveloperMode);/c\  info.in_developer_mode = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 sed -i '/info.can_load_unpacked =/,/->HasAllowlistedExtension();/c\  info.can_load_unpacked = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 # ZIP installs become unpacked extensions. Keep their extracted files under
 # the profile on Chromium branches that still gate this behind a feature flag.
