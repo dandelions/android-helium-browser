@@ -285,8 +285,9 @@ sed -i '/boolean isIncognito = isIncognitoTabBeingRestored(tabToRestore, tabStat
                             tabToRestore.fromMerge);\
         }' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
 perl -0pi -e 's|    \@Override\n    public void onStartWithNative\(\) \{|    private void clearVolatileRendererCaches() {\n        PostTask.postTask(\n                TaskTraits.BEST_EFFORT_MAY_BLOCK,\n                () -> {\n                    try {\n                        String dataDir = org.chromium.base.PathUtils.getDataDirectory();\n                        String[] paths = {\n                            "Default/GPUCache",\n                            "Default/GrShaderCache",\n                            "Default/ShaderCache",\n                            "Default/Code Cache/js",\n                            "Default/Code Cache/wasm"\n                        };\n                        for (String path : paths) {\n                            org.chromium.base.FileUtils.recursivelyDeleteFile(\n                                    new java.io.File(dataDir, path),\n                                    org.chromium.base.FileUtils.DELETE_ALL);\n                        }\n                    } catch (Throwable t) {\n                        Log.w(TAG, "Failed to clear volatile renderer caches", t);\n                    }\n                });\n    }\n\n    \@Override\n    public void onStartWithNative() {|' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-sed -i '/super.onStartWithNative();/a\
-        clearVolatileRendererCaches();' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+# Keep the cache cleanup helper available for emergency debugging, but do not
+# run it automatically on every startup. Deleting renderer caches while native
+# startup is still settling can destabilize the first launch after install.
 
 # crbug.com/431004500: incognito uaf
 sed -i '/for (int i = 0; i < tab_list->GetTabCount(); ++i) {/i if (!tab_list) { continue; }' chrome/browser/extensions/api/tabs/tabs_api.cc
