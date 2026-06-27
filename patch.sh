@@ -58,6 +58,10 @@ perl -0pi -e 's/#buttonStrip cr-button \{\n  margin-inline-end: 16px;\n\}/#butto
 # ext: install local zip/crx from developer mode
 sed -i '/info.in_developer_mode =/,/prefs::kExtensionsUIDeveloperMode);/c\  info.in_developer_mode = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 sed -i '/info.can_load_unpacked =/,/->HasAllowlistedExtension();/c\  info.can_load_unpacked = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
+# ZIP installs become unpacked extensions. Keep their extracted files under
+# the profile on Chromium branches that still gate this behind a feature flag.
+sed -i 's/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, base::FEATURE_DISABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, base::FEATURE_ENABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
+sed -i 's/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, "ExtensionsZipFileInstalledInProfileDir", base::FEATURE_DISABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, "ExtensionsZipFileInstalledInProfileDir", base::FEATURE_ENABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
 sed -i '/loadUnpacked(): Promise<boolean>;/a\
   /** Opens a file picker to install a local zip, crx, or user script. */\
   installLocalExtensionFile(): Promise<boolean>;' chrome/browser/resources/extensions/toolbar.ts
