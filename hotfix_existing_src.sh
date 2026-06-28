@@ -31,9 +31,10 @@ done
 sed -i 's|                ("std::string") String extensionId);|                @JniType("std::string") String extensionId);|' "$BRIDGE"
 
 # Do not call the native options-page path from the Android extensions menu.
-# It can crash on Android browser-window contexts. Open the extension details
-# page instead.
+# It can crash on Android browser-window contexts. Use Chromium's existing
+# executeAction path so extension popups/actions open from the menu.
 perl -0pi -e 's|\n        if \(mMenuBridge\.openOptionsPage\(extensionId\)\) \{\n            return;\n        \}\n||' "$MENU_MEDIATOR"
+sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 
 # Use a stable unpack directory for ZIP-installed extensions instead of
 # Chromium's random zipname_XXXXXX directory. This prevents prefs from pointing
