@@ -156,6 +156,20 @@ run_autoninja() {
     shift
 
     if [ -n "${NINJA_JOBS:-}" ]; then
+        local sisorc="build/config/siso/.sisorc"
+        local tmp_sisorc
+        mkdir -p "$(dirname "$sisorc")"
+        tmp_sisorc="$(mktemp)"
+        if [ -f "$sisorc" ]; then
+            grep -v -E '^ninja --(local_jobs|remote_jobs)=' "$sisorc" > "$tmp_sisorc" || true
+        fi
+        printf 'ninja --local_jobs=%s\n' "$NINJA_JOBS" >> "$tmp_sisorc"
+        printf 'ninja --remote_jobs=0\n' >> "$tmp_sisorc"
+        mv "$tmp_sisorc" "$sisorc"
+        echo "Configured Siso local jobs: $NINJA_JOBS"
+    fi
+
+    if [ -n "${NINJA_JOBS:-}" ]; then
         autoninja -C "$out_dir" -j "$NINJA_JOBS" "$@"
     else
         autoninja -C "$out_dir" "$@"
