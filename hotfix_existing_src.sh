@@ -18,8 +18,9 @@ CTA=chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.jav
 VERIFIER=chrome/browser/extensions/chrome_content_verifier_delegate.cc
 PROFILE_INFO=chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 MENU_DELEGATE_CC=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
+ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$MENU_DELEGATE_CC"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$MENU_DELEGATE_CC" "$ZIP_INSTALLER"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -33,6 +34,11 @@ sed -i 's|                ("std::string") String extensionId);|                @
 # It can crash on Android browser-window contexts. Open the extension details
 # page instead.
 perl -0pi -e 's|\n        if \(mMenuBridge\.openOptionsPage\(extensionId\)\) \{\n            return;\n        \}\n||' "$MENU_MEDIATOR"
+
+# Use a stable unpack directory for ZIP-installed extensions instead of
+# Chromium's random zipname_XXXXXX directory. This prevents prefs from pointing
+# at a random missing path after a crash or app update.
+perl -0pi -e 's|  // Create the root of the unique directory for the \.zip file\.\n  base::FilePath::StringType dir_name =\n      zip_file\.RemoveExtension\(\)\.BaseName\(\)\.value\(\) \+ FILE_PATH_LITERAL\("_"\);\n\n  // Creates the full unique directory path as unzip_dir\.\n  base::FilePath unzip_dir;\n  if \(!base::CreateTemporaryDirInDir\(root_unzip_dir, dir_name, &unzip_dir\)\) \{\n    return ZipResultVariant\{ErrorUtils::FormatErrorMessage\(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8\(unzip_dir\.LossyDisplayName\(\)\)\)\};\n  \}|  base::FilePath unzip_dir = root_unzip_dir.Append(\n      zip_file.RemoveExtension().BaseName());\n  if (!base::CreateDirectory(unzip_dir)) {\n    return ZipResultVariant{ErrorUtils::FormatErrorMessage(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8(unzip_dir.LossyDisplayName()))};\n  }|' "$ZIP_INSTALLER"
 
 # OpenOptionsPage uses Profile as a BrowserContext. Include the full Profile
 # type so the conversion is visible to the C++ compiler.
