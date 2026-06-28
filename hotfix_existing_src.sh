@@ -18,9 +18,11 @@ CTA=chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.jav
 VERIFIER=chrome/browser/extensions/chrome_content_verifier_delegate.cc
 PROFILE_INFO=chrome/browser/extensions/api/developer_private/profile_info_generator.cc
 MENU_DELEGATE_CC=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
+ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
+WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$MENU_DELEGATE_CC" "$ZIP_INSTALLER"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$MENU_DELEGATE_CC" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -35,6 +37,20 @@ sed -i 's|                ("std::string") String extensionId);|                @
 # executeAction path so extension popups/actions open from the menu.
 perl -0pi -e 's|\n        if \(mMenuBridge\.openOptionsPage\(extensionId\)\) \{\n            return;\n        \}\n||' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
+sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
+
+# When an action is disabled on internal pages such as chrome://extensions,
+# Chromium falls back to the extension context menu, whose obvious path is the
+# details page. Prefer the extension options page when it exists.
+grep -q 'chrome/browser/extensions/extension_tab_util.h' "$ACTION_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/extensions\/extension_view_host_factory.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$ACTION_DELEGATE_CC"
+grep -q 'chrome/browser/profiles/profile.h' "$ACTION_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/extensions\/extension_tab_util.h"/a\#include "chrome/browser/profiles/profile.h"' "$ACTION_DELEGATE_CC"
+grep -q 'chrome/browser/ui/browser_window/public/browser_window_interface.h' "$ACTION_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/profiles\/profile.h"/a\#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"' "$ACTION_DELEGATE_CC"
+grep -q 'extensions/browser/extension_registry.h' "$ACTION_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/browser_window\/public\/browser_window_interface.h"/a\#include "extensions/browser/extension_registry.h"' "$ACTION_DELEGATE_CC"
+perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(\) \{\n  toolbar_android_->ShowContextMenu\(action_id_\);\n\}|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback() {\n  const extensions::Extension* extension =\n      extensions::ExtensionRegistry::Get(browser_->GetProfile())\n          ->enabled_extensions()\n          .GetByID(action_id_);\n  if (extension &&\n      extensions::ExtensionTabUtil::OpenOptionsPage(extension, browser_)) {\n    return;\n  }\n\n  toolbar_android_->ShowContextMenu(action_id_);\n}|' "$ACTION_DELEGATE_CC"
 
 # Use a stable unpack directory for ZIP-installed extensions instead of
 # Chromium's random zipname_XXXXXX directory. This prevents prefs from pointing
@@ -48,6 +64,14 @@ grep -q 'chrome/browser/profiles/profile.h' "$MENU_DELEGATE_CC" || \
 
 # Keep local zip/crx/unpacked extensions out of WebStore content verification.
 sed -i 's|if (!InstallVerifier::IsFromStore(extension, context_)) {|if (!extension.from_webstore()) {|' "$VERIFIER"
+
+# Do not let extension main-frame blocks/redirects leave the browser restored
+# into a blank or invalid chrome-extension page. Subresources remain filterable.
+if ! grep -q 'WebRequestResourceType::MAIN_FRAME) { break; }' "$WEB_REQUEST_ROUTER"; then
+    sed -i '/case DNRRequestAction::Type::BLOCK:/,/case DNRRequestAction::Type::ALLOW:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' "$WEB_REQUEST_ROUTER"
+    sed -i '/case DNRRequestAction::Type::REDIRECT:/,/case DNRRequestAction::Type::MODIFY_HEADERS:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' "$WEB_REQUEST_ROUTER"
+fi
+perl -0pi -e 's|  if \(request->web_request_type == WebRequestResourceType::MAIN_FRAME\) \{\n    canceled_by_extension\.reset\(\);\n    if \(blocked_request\.new_url && !blocked_request\.new_url->is_empty\(\) &&\n        !blocked_request\.new_url->SchemeIs\("chrome-extension"\)\) \{\n      \*blocked_request\.new_url = GURL\(\);\n    \}\n  \}|  if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) {\n    canceled_by_extension.reset();\n    if (blocked_request.new_url && !blocked_request.new_url->is_empty()) {\n      *blocked_request.new_url = GURL();\n    }\n  }|' "$WEB_REQUEST_ROUTER"
 
 # Do not fake developer mode in the UI. Fresh installs should start with
 # developer mode disabled, and the load-unpacked backend checks the real pref.
