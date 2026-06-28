@@ -52,10 +52,39 @@ grep -q 'extensions/browser/extension_registry.h' "$ACTION_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/browser_window\/public\/browser_window_interface.h"/a\#include "extensions/browser/extension_registry.h"' "$ACTION_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(\) \{\n  toolbar_android_->ShowContextMenu\(action_id_\);\n\}|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback() {\n  const extensions::Extension* extension =\n      extensions::ExtensionRegistry::Get(browser_->GetProfile())\n          ->enabled_extensions()\n          .GetByID(action_id_);\n  if (extension &&\n      extensions::ExtensionTabUtil::OpenOptionsPage(extension, browser_)) {\n    return;\n  }\n\n  toolbar_android_->ShowContextMenu(action_id_);\n}|' "$ACTION_DELEGATE_CC"
 
-# Use a stable unpack directory for ZIP-installed extensions instead of
-# Chromium's random zipname_XXXXXX directory. This prevents prefs from pointing
-# at a random missing path after a crash or app update.
-perl -0pi -e 's|  // Create the root of the unique directory for the \.zip file\.\n  base::FilePath::StringType dir_name =\n      zip_file\.RemoveExtension\(\)\.BaseName\(\)\.value\(\) \+ FILE_PATH_LITERAL\("_"\);\n\n  // Creates the full unique directory path as unzip_dir\.\n  base::FilePath unzip_dir;\n  if \(!base::CreateTemporaryDirInDir\(root_unzip_dir, dir_name, &unzip_dir\)\) \{\n    return ZipResultVariant\{ErrorUtils::FormatErrorMessage\(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8\(unzip_dir\.LossyDisplayName\(\)\)\)\};\n  \}|  base::FilePath unzip_dir = root_unzip_dir.Append(\n      zip_file.RemoveExtension().BaseName());\n  if (!base::CreateDirectory(unzip_dir)) {\n    return ZipResultVariant{ErrorUtils::FormatErrorMessage(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8(unzip_dir.LossyDisplayName()))};\n  }|' "$ZIP_INSTALLER"
+# Use a stable but unique unpack directory for ZIP-installed extensions.
+# The original random zipname_XXXXXX directory breaks after updates; a plain
+# zip basename collides when two ZIPs share a display name. Hash the ZIP content
+# so identical ZIPs update in place while different ZIPs never overwrite each
+# other.
+grep -q 'base/hash/sha1.h' "$ZIP_INSTALLER" || \
+    sed -i '/#include "base\/functional\/callback_helpers.h"/a\#include "base/hash/sha1.h"' "$ZIP_INSTALLER"
+grep -q 'base/strings/string_number_conversions.h' "$ZIP_INSTALLER" || \
+    sed -i '/#include "base\/hash\/sha1.h"/a\#include "base/strings/string_number_conversions.h"' "$ZIP_INSTALLER"
+ZIP_HASH_DIR_BLOCK='  std::string zip_contents;
+  if (!base::ReadFileToString(zip_file, &zip_contents)) {
+    return ZipResultVariant{std::string(kExtensionHandlerFileUnzipError)};
+  }
+
+  std::string zip_hash =
+      base::HexEncodeLower(base::SHA1HashString(zip_contents)).substr(0, 12);
+  base::FilePath unzip_dir = root_unzip_dir.Append(
+      zip_file.RemoveExtension().BaseName().value() + FILE_PATH_LITERAL("_") +
+      base::FilePath::FromASCII(zip_hash).value());
+  if (base::PathExists(unzip_dir) &&
+      !base::DeletePathRecursively(unzip_dir)) {
+    return ZipResultVariant{ErrorUtils::FormatErrorMessage(
+        kExtensionHandlerZippedDirError,
+        base::UTF16ToUTF8(unzip_dir.LossyDisplayName()))};
+  }
+  if (!base::CreateDirectory(unzip_dir)) {
+    return ZipResultVariant{ErrorUtils::FormatErrorMessage(
+        kExtensionHandlerZippedDirError,
+        base::UTF16ToUTF8(unzip_dir.LossyDisplayName()))};
+  }'
+export ZIP_HASH_DIR_BLOCK
+perl -0pi -e 'BEGIN { $r = $ENV{"ZIP_HASH_DIR_BLOCK"}; } s|  // Create the root of the unique directory for the \.zip file\.\n  base::FilePath::StringType dir_name =\n      zip_file\.RemoveExtension\(\)\.BaseName\(\)\.value\(\) \+ FILE_PATH_LITERAL\("_"\);\n\n  // Creates the full unique directory path as unzip_dir\.\n  base::FilePath unzip_dir;\n  if \(!base::CreateTemporaryDirInDir\(root_unzip_dir, dir_name, &unzip_dir\)\) \{\n    return ZipResultVariant\{ErrorUtils::FormatErrorMessage\(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8\(unzip_dir\.LossyDisplayName\(\)\)\)\};\n  \}|$r|; s|  base::FilePath unzip_dir = root_unzip_dir.Append\(\n      zip_file\.RemoveExtension\(\)\.BaseName\(\)\);\n  if \(!base::CreateDirectory\(unzip_dir\)\) \{\n    return ZipResultVariant\{ErrorUtils::FormatErrorMessage\(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8\(unzip_dir\.LossyDisplayName\(\)\)\)\};\n  \}|$r|' "$ZIP_INSTALLER"
+unset ZIP_HASH_DIR_BLOCK
 
 # OpenOptionsPage uses Profile as a BrowserContext. Include the full Profile
 # type so the conversion is visible to the C++ compiler.
