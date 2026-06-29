@@ -22,6 +22,7 @@ FAST_LOCAL_BUILD="${FAST_LOCAL_BUILD:-0}"
 SKIP_SOURCE_PREPARE="${SKIP_SOURCE_PREPARE:-0}"
 SKIP_SYSTEM_DEPS="${SKIP_SYSTEM_DEPS:-0}"
 CCACHE_MAX_SIZE="${CCACHE_MAX_SIZE:-30G}"
+BUILD_PROXY="${BUILD_PROXY:-${https_proxy:-${http_proxy:-${HTTPS_PROXY:-${HTTP_PROXY:-}}}}}"
 BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-$((($(date -u +%s) - 1577836800) / 60))}"
 if [ "$FAST_LOCAL_BUILD" = "1" ]; then
     SKIP_SOURCE_PREPARE=1
@@ -47,6 +48,27 @@ if [ "$BUILD_VERSION_INCREMENT" -gt 13000000 ]; then
 fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
+
+configure_network_env() {
+    if [ -n "$BUILD_PROXY" ]; then
+        export http_proxy="$BUILD_PROXY"
+        export https_proxy="$BUILD_PROXY"
+        export HTTP_PROXY="$BUILD_PROXY"
+        export HTTPS_PROXY="$BUILD_PROXY"
+        export all_proxy="${all_proxy:-$BUILD_PROXY}"
+        export ALL_PROXY="${ALL_PROXY:-$BUILD_PROXY}"
+        export no_proxy="${no_proxy:-localhost,127.0.0.1,::1}"
+        export NO_PROXY="${NO_PROXY:-$no_proxy}"
+        echo "Using build proxy: $BUILD_PROXY"
+    fi
+
+    export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
+    export PIP_RETRIES="${PIP_RETRIES:-10}"
+    export GIT_HTTP_LOW_SPEED_LIMIT="${GIT_HTTP_LOW_SPEED_LIMIT:-1000}"
+    export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-300}"
+}
+configure_network_env
+
 if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
     sudo apt-get update
     sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2 openjdk-17-jre-headless
@@ -201,9 +223,26 @@ reset_chromium_submodules() {
     '
 }
 
+clear_partial_vpython_cache() {
+    local cache_dir="${VPYTHON_ROOT:-$HOME/.cache/vpython-root.0}/store"
+
+    if [ -d "$cache_dir" ]; then
+        echo "Clearing partial vpython virtualenv cache under $cache_dir"
+        find "$cache_dir" -maxdepth 1 -type d -name 'python_venv-*' -exec rm -rf {} +
+    fi
+}
+
+run_with_vpython_retry() {
+    "$@" && return 0
+
+    echo "Command failed, clearing partial vpython cache and retrying once: $*" >&2
+    clear_partial_vpython_cache
+    "$@"
+}
+
 ensure_depot_tools_bootstrap() {
     export DEPOT_TOOLS_DIR="$SCRIPT_DIR/depot_tools"
-    "$DEPOT_TOOLS_DIR/ensure_bootstrap"
+    run_with_vpython_retry "$DEPOT_TOOLS_DIR/ensure_bootstrap"
 
     if [ ! -f "$DEPOT_TOOLS_DIR/python3_bin_reldir.txt" ]; then
         echo "depot_tools bootstrap failed: missing $DEPOT_TOOLS_DIR/python3_bin_reldir.txt" >&2
@@ -382,7 +421,7 @@ EOF
     cd src
     reset_chromium_submodules
     cd ..
-    gclient runhooks
+    run_with_vpython_retry gclient runhooks
     cd src
     rm -rf third_party/angle/third_party/VK-GL-CTS/
     if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
