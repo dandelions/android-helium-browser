@@ -58,6 +58,7 @@ perl -0pi -e 's/#buttonStrip cr-button \{\n  margin-inline-end: 16px;\n\}/#butto
 
 # ext: install local zip/crx from developer mode
 sed -i '/info.can_load_unpacked =/,/->HasAllowlistedExtension();/c\  info.can_load_unpacked = true;' chrome/browser/extensions/api/developer_private/profile_info_generator.cc
+perl -0pi -e 's|  file_path = \*vp;\n#endif  // BUILDFLAG\(IS_ANDROID\)|  file_path = *vp;\n\n  base::FilePath local_unpacked_dir =\n      Profile::FromBrowserContext(browser_context())\n          ->GetPath()\n          .Append(FILE_PATH_LITERAL("Local Extension Install Files"))\n          .Append(FILE_PATH_LITERAL("Unpacked Folders"));\n  base::FilePath stable_file_path =\n      local_unpacked_dir.Append(file_path.BaseName());\n  if (base::CreateDirectory(local_unpacked_dir)) {\n    if (base::PathExists(stable_file_path)) {\n      base::DeletePathRecursively(stable_file_path);\n    }\n    if (base::CopyDirectory(file_path, stable_file_path, true)) {\n      file_path = stable_file_path;\n    }\n  }\n#endif  // BUILDFLAG(IS_ANDROID)|' chrome/browser/extensions/api/developer_private/developer_private_functions.cc
 # ZIP installs become unpacked extensions. Keep their extracted files under
 # the profile on Chromium branches that still gate this behind a feature flag.
 sed -i 's/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, base::FEATURE_DISABLED_BY_DEFAULT);/BASE_FEATURE(kExtensionsZipFileInstalledInProfileDir, base::FEATURE_ENABLED_BY_DEFAULT);/' extensions/common/extension_features.cc
@@ -271,11 +272,11 @@ import org.chromium.components.embedder_support.util.UrlConstants;' chrome/andro
 sed -i '/private static boolean sDeferredStartupComplete;/a\
 \
     private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\
-        return TextUtils.isEmpty(url);\
+        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\
     }\
 \
     private static String safeUrlForRestore(@Nullable String url) {\
-        return shouldReplaceUrlForRestore(url) ? UrlConstants.VERSION_URL : assumeNonNull(url);\
+        return shouldReplaceUrlForRestore(url) ? UrlConstants.NTP_URL : assumeNonNull(url);\
     }' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
 sed -i '/boolean isIncognito = isIncognitoTabBeingRestored(tabToRestore, tabState);/a\
         if (shouldReplaceUrlForRestore(tabToRestore.url)) {\

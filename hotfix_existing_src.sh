@@ -25,8 +25,9 @@ MENU_DELEGATE_CC=chrome/browser/ui/android/extensions/extensions_menu_delegate_a
 ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
+TAB_STORE=chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -109,6 +110,11 @@ export ZIP_HASH_DIR_BLOCK
 perl -0pi -e 'BEGIN { $r = $ENV{"ZIP_HASH_DIR_BLOCK"}; } s|  // Create the root of the unique directory for the \.zip file\.\n  base::FilePath::StringType dir_name =\n      zip_file\.RemoveExtension\(\)\.BaseName\(\)\.value\(\) \+ FILE_PATH_LITERAL\("_"\);\n\n  // Creates the full unique directory path as unzip_dir\.\n  base::FilePath unzip_dir;\n  if \(!base::CreateTemporaryDirInDir\(root_unzip_dir, dir_name, &unzip_dir\)\) \{\n    return ZipResultVariant\{ErrorUtils::FormatErrorMessage\(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8\(unzip_dir\.LossyDisplayName\(\)\)\)\};\n  \}|$r|; s|  base::FilePath unzip_dir = root_unzip_dir.Append\(\n      zip_file\.RemoveExtension\(\)\.BaseName\(\)\);\n  if \(!base::CreateDirectory\(unzip_dir\)\) \{\n    return ZipResultVariant\{ErrorUtils::FormatErrorMessage\(\n        kExtensionHandlerZippedDirError,\n        base::UTF16ToUTF8\(unzip_dir\.LossyDisplayName\(\)\)\)\};\n  \}|$r|' "$ZIP_INSTALLER"
 unset ZIP_HASH_DIR_BLOCK
 
+# Folder-based local extensions also need a stable profile-owned copy on
+# Android. The original SAF/UnpackedExtensions path can become unreadable after
+# another local extension install, an app update, or garbage collection.
+perl -0pi -e 's|  file_path = \*vp;\n#endif  // BUILDFLAG\(IS_ANDROID\)|  file_path = *vp;\n\n  base::FilePath local_unpacked_dir =\n      Profile::FromBrowserContext(browser_context())\n          ->GetPath()\n          .Append(FILE_PATH_LITERAL("Local Extension Install Files"))\n          .Append(FILE_PATH_LITERAL("Unpacked Folders"));\n  base::FilePath stable_file_path =\n      local_unpacked_dir.Append(file_path.BaseName());\n  if (base::CreateDirectory(local_unpacked_dir)) {\n    if (base::PathExists(stable_file_path)) {\n      base::DeletePathRecursively(stable_file_path);\n    }\n    if (base::CopyDirectory(file_path, stable_file_path, true)) {\n      file_path = stable_file_path;\n    }\n  }\n#endif  // BUILDFLAG(IS_ANDROID)|' "$DEV_PRIVATE_FUNCTIONS"
+
 # ZIP-installed local extensions must not live under
 # registrar->unpacked_install_directory(); ExtensionGarbageCollector scans that
 # directory and can delete ZIP unpack dirs that are not yet or no longer exactly
@@ -138,6 +144,37 @@ perl -0pi -e 's|  info\.in_developer_mode = true;|  info.in_developer_mode = !in
 
 # Startup stability: do not purge renderer caches automatically on every start.
 sed -i '/clearVolatileRendererCaches();/d' "$CTA"
+
+# Startup recovery: a previously restored chrome-extension:// tab can point to
+# a local extension path that no longer exists. Restore those top-level entries
+# to NTP so extension override logic can recreate the page instead of reopening
+# a broken saved tab on every launch.
+if grep -q 'private static boolean shouldReplaceUrlForRestore' "$TAB_STORE"; then
+    perl -0pi -e 's|private static boolean shouldReplaceUrlForRestore\(@Nullable String url\) \{\n\s*return TextUtils\.isEmpty\(url\)(?: \|\| url\.startsWith\("chrome-extension://"\))?;\n\s*\}|private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\n        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\n    }|s; s|UrlConstants\.VERSION_URL|UrlConstants.NTP_URL|g' "$TAB_STORE"
+else
+    grep -q 'org.chromium.components.embedder_support.util.UrlConstants' "$TAB_STORE" || \
+        sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\import org.chromium.components.embedder_support.util.UrlConstants;' "$TAB_STORE"
+    sed -i '/private static boolean sDeferredStartupComplete;/a\
+\
+    private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\
+        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\
+    }\
+\
+    private static String safeUrlForRestore(@Nullable String url) {\
+        return shouldReplaceUrlForRestore(url) ? UrlConstants.NTP_URL : assumeNonNull(url);\
+    }' "$TAB_STORE"
+    sed -i '/boolean isIncognito = isIncognitoTabBeingRestored(tabToRestore, tabState);/a\
+        if (shouldReplaceUrlForRestore(tabToRestore.url)) {\
+            tabState = null;\
+            tabToRestore =\
+                    new TabRestoreDetails(\
+                            tabToRestore.id,\
+                            tabToRestore.originalIndex,\
+                            tabToRestore.isIncognito,\
+                            safeUrlForRestore(tabToRestore.url),\
+                            tabToRestore.fromMerge);\
+        }' "$TAB_STORE"
+fi
 
 # Startup stability: extension toolbar button visibility must tolerate missing
 # toolbar variants during first-launch layout inflation.
