@@ -48,6 +48,10 @@ if [ "$BUILD_VERSION_INCREMENT" -gt 13000000 ]; then
 fi
 export CHROMIUM_SOURCE=https://chromium.googlesource.com/chromium/src.git # https://github.com/chromium/chromium.git
 export DEBIAN_FRONTEND=noninteractive
+# The script updates depot_tools explicitly during full source preparation.
+# Disable depot_tools' implicit self-update during gclient/gn/autoninja so a
+# long local build does not suddenly switch vpython/bootstrap behavior.
+export DEPOT_TOOLS_UPDATE="${DEPOT_TOOLS_UPDATE:-0}"
 
 configure_network_env() {
     if [ -n "$BUILD_PROXY" ]; then
