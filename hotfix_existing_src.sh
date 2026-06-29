@@ -41,11 +41,19 @@ perl -0pi -e 's|current_toolchain == default_toolchain,|current_toolchain == def
 sed -i 's|                ("std::string") String extensionId);|                @JniType("std::string") String extensionId);|' "$BRIDGE"
 
 # Do not call the native options-page path from the Android extensions menu.
-# It can crash on Android browser-window contexts. Use Chromium's existing
-# executeAction path so extension popups/actions open from the menu.
+# It can crash on Android browser-window contexts. Route primary menu clicks
+# through the toolbar bridge, which pops out an anchor button before showing
+# extension popups.
 perl -0pi -e 's|\n        if \(mMenuBridge\.openOptionsPage\(extensionId\)\) \{\n            return;\n        \}\n||' "$MENU_MEDIATOR"
+grep -q 'org.chromium.chrome.browser.ui.toolbar.InvocationSource' "$MENU_MEDIATOR" || \
+    sed -i '/import org.chromium.chrome.browser.ui.extensions.ExtensionsToolbarBridge;/a\import org.chromium.chrome.browser.ui.toolbar.InvocationSource;' "$MENU_MEDIATOR"
+grep -q 'private final ExtensionsToolbarBridge mToolbarBridge;' "$MENU_MEDIATOR" || \
+    sed -i '/private final ExtensionsMenuBridge mMenuBridge;/a\    private final ExtensionsToolbarBridge mToolbarBridge;' "$MENU_MEDIATOR"
+grep -q 'mToolbarBridge = toolbarBridge;' "$MENU_MEDIATOR" || \
+    sed -i '/new ExtensionsMenuBridge(mTask, mProfile, toolbarBridge, \/* observer= \*\/ this);/a\        mToolbarBridge = toolbarBridge;' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
+sed -i 's|(view) -> mMenuBridge.executeAction(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' "$MENU_MEDIATOR"
 
 # When an action is disabled on internal pages such as chrome://extensions,
 # Chromium falls back to the extension context menu, whose obvious path is the
