@@ -10,7 +10,15 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-TAG="${TAG:-v$VERSION}"
+if [ -z "${TAG:-}" ]; then
+    git -C "$SCRIPT_DIR" fetch origin '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
+    head_tags=$(git -C "$SCRIPT_DIR" tag --points-at HEAD --list "v$VERSION*" | sort -V)
+    if [ -n "$head_tags" ]; then
+        TAG=$(printf '%s\n' "$head_tags" | tail -n 1)
+    else
+        TAG="v$VERSION"
+    fi
+fi
 RELEASE_DIR="${RELEASE_DIR:-$SCRIPT_DIR/chromium/src/out/release}"
 MOVE_TAG="${MOVE_TAG:-0}"
 
