@@ -311,6 +311,14 @@ sed -i 's|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, BuildConfig.IS_DESKTOP_AND
 perl -0pi -e 's/BASE_FEATURE\(kDarkenWebsitesCheckboxInThemesSetting,\n\s*base::FEATURE_DISABLED_BY_DEFAULT\);/BASE_FEATURE(kDarkenWebsitesCheckboxInThemesSetting,\n             base::FEATURE_ENABLED_BY_DEFAULT);/' components/content_settings/core/common/features.cc
 perl -0pi -e 's/^[ \t]*return currentTab != null && !isNativePage && isFlagEnabled && isFeatureEnabled;\n/        return currentTab != null && !isNativePage;\n/m; s/^[ \t]*return currentTab != null[^\n]*isFeatureEnabled[^\n]*!isNativePage;\n/        return currentTab != null && !isNativePage;\n/m' chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
 
+# crbug.com/helium: do not let pages block tab close/navigation with beforeunload
+grep -q 'Helium: beforeunload dialogs are disabled by default' components/javascript_dialogs/app_modal_dialog_manager.cc || sed -i '/void AppModalDialogManager::RunBeforeUnloadDialog(/,/^[}]$/ { /ChromeJavaScriptDialogExtraData\* extra_data =/i\
+  // Helium: beforeunload dialogs are disabled by default.\
+  std::move(callback).Run(true, std::u16string());\
+  return;\
+
+}' components/javascript_dialogs/app_modal_dialog_manager.cc
+
 # crbug.com/helium: startup blank-screen recovery guards
 sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\
 import org.chromium.components.embedder_support.util.UrlConstants;' chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
