@@ -320,11 +320,19 @@ grep -q 'Helium: beforeunload dialogs are disabled by default' components/javasc
 }' components/javascript_dialogs/app_modal_dialog_manager.cc
 
 # crbug.com/helium: allow forcing site-requested new tabs/windows into current tab
-grep -q '"open-new-links-in-current-tab"' chrome/browser/ungoogled_flag_entries.h || sed -i '/SINGLE_VALUE_TYPE("popups-to-tabs")},/a\
+if [ -f chrome/browser/ungoogled_flag_entries.h ] && ! grep -q '"open-new-links-in-current-tab"' chrome/browser/ungoogled_flag_entries.h; then
+sed -i '/SINGLE_VALUE_TYPE("popups-to-tabs")},/a\
     {"open-new-links-in-current-tab",\
      "Open new links in current tab",\
      "Forces site-requested new tabs and windows to navigate in the current tab. ungoogled-chromium flag",\
      kOsAll, SINGLE_VALUE_TYPE("open-new-links-in-current-tab")},' chrome/browser/ungoogled_flag_entries.h
+elif [ ! -f chrome/browser/ungoogled_flag_entries.h ] && ! grep -q '"open-new-links-in-current-tab"' chrome/browser/about_flags.cc; then
+sed -i '/#include "chrome\/browser\/unexpire_flags_gen.inc"/a\
+    {"open-new-links-in-current-tab",\
+     "Open new links in current tab",\
+     "Forces site-requested new tabs and windows to navigate in the current tab.",\
+     kOsAndroid, SINGLE_VALUE_TYPE("open-new-links-in-current-tab")},' chrome/browser/about_flags.cc
+fi
 grep -q '#include "base/command_line.h"' content/renderer/render_frame_impl.cc || sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' content/renderer/render_frame_impl.cc
 if ! grep -q 'open-new-links-in-current-tab' content/renderer/render_frame_impl.cc; then
 sed -i '/case blink::kWebNavigationPolicyNewBackgroundTab:/,/return WindowOpenDisposition::NEW_BACKGROUND_TAB;/ s|return WindowOpenDisposition::NEW_BACKGROUND_TAB;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n        return WindowOpenDisposition::CURRENT_TAB;\n      return WindowOpenDisposition::NEW_BACKGROUND_TAB;|' content/renderer/render_frame_impl.cc
@@ -347,6 +355,21 @@ sed -i '/case ui::mojom::WindowOpenDisposition::NEW_BACKGROUND_TAB:/,/return tru
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_POPUP:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_WINDOW:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
 fi
+
+# crbug.com/helium: disable tab close undo snackbar
+grep -q 'Helium: disable tab close undo snackbar' chrome/android/java/src/org/chromium/chrome/browser/undo_tab_close_snackbar/UndoBarController.java || sed -i '/if (closedTabs.isEmpty() && savedTabGroupSyncIds.isEmpty()) return;/a\
+        if (shouldDisableUndoSnackbar()) {\
+            for (Tab closedTab : closedTabs) {\
+                commitTabClosure(closedTab.getId());\
+            }\
+            return;\
+        }' chrome/android/java/src/org/chromium/chrome/browser/undo_tab_close_snackbar/UndoBarController.java
+grep -q 'private static boolean shouldDisableUndoSnackbar' chrome/android/java/src/org/chromium/chrome/browser/undo_tab_close_snackbar/UndoBarController.java || sed -i '/private void showUndoBar(/i\
+    private static boolean shouldDisableUndoSnackbar() {\
+        // Helium: disable tab close undo snackbar.\
+        return true;\
+    }\
+' chrome/android/java/src/org/chromium/chrome/browser/undo_tab_close_snackbar/UndoBarController.java
 
 # crbug.com/helium: startup blank-screen recovery guards
 sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\
