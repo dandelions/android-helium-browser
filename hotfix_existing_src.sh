@@ -32,7 +32,7 @@ UNGOOGLED_FLAGS=chrome/browser/ungoogled_flag_entries.h
 NAV_POLICY=content/renderer/render_frame_impl.cc
 WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$JS_DIALOG_MANAGER" "$UNGOOGLED_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$JS_DIALOG_MANAGER" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -64,12 +64,13 @@ grep -q 'Helium: beforeunload dialogs are disabled by default' "$JS_DIALOG_MANAG
 # Add a user-facing flag for sites that force links into new tabs/windows.
 # Disabled by default; enable chrome://flags/#open-new-links-in-current-tab to
 # make those navigations reuse the current tab.
-grep -q '"open-new-links-in-current-tab"' "$UNGOOGLED_FLAGS" || \
+if [ -f "$UNGOOGLED_FLAGS" ] && ! grep -q '"open-new-links-in-current-tab"' "$UNGOOGLED_FLAGS"; then
     sed -i '/SINGLE_VALUE_TYPE("popups-to-tabs")},/a\
     {"open-new-links-in-current-tab",\
      "Open new links in current tab",\
      "Forces site-requested new tabs and windows to navigate in the current tab. ungoogled-chromium flag",\
      kOsAll, SINGLE_VALUE_TYPE("open-new-links-in-current-tab")},' "$UNGOOGLED_FLAGS"
+fi
 grep -q '#include "base/command_line.h"' "$NAV_POLICY" || \
     sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' "$NAV_POLICY"
 if ! grep -q 'open-new-links-in-current-tab' "$NAV_POLICY"; then
