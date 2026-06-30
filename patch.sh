@@ -36,6 +36,50 @@ grep -q 'mToolbarBridge = toolbarBridge;' chrome/browser/ui/android/toolbar/java
 sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
 sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
 sed -i 's|(view) -> mMenuBridge.executeAction(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
+sed -i 's|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|(view) -> openExtensionOptionsFromMenu(entry.id))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
+grep -q 'private void openExtensionOptionsFromMenu' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java || sed -i '/private void openUrlFromMenu(String url) {/i\
+    private void openExtensionOptionsFromMenu(String extensionId) {\
+        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);\
+        if (optionsUrl != null && !optionsUrl.isEmpty()) {\
+            openUrlFromMenu(optionsUrl);\
+            return;\
+        }\
+        if (mToolbarBridge != null) {\
+            mToolbarBridge.executeUserAction(extensionId, InvocationSource.TOOLBAR_BUTTON);\
+            return;\
+        }\
+        mMenuBridge.executeAction(extensionId);\
+    }\
+' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
+grep -q 'getOptionsPageUrl(String extensionId)' chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionsMenuBridge.java || sed -i '/public void executeAction(String extensionId) {/i\
+    public String getOptionsPageUrl(String extensionId) {\
+        return ExtensionsMenuBridgeJni.get()\
+                .getOptionsPageUrl(mNativeExtensionsMenuDelegateAndroid, extensionId);\
+    }\
+' chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionsMenuBridge.java
+grep -q '^        String getOptionsPageUrl(' chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionsMenuBridge.java || perl -0pi -e 's|(\n\s*\@NativeMethods\n\s*public interface Natives \{\n)|$1        \@JniType("std::string")\n        String getOptionsPageUrl(\n                long nativeExtensionsMenuDelegateAndroid,\n                \@JniType("std::string") String extensionId);\n\n|' chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionsMenuBridge.java
+grep -q '#include <string>' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h || sed -i '/^#include "base\/android\/jni_android.h"/i\#include <string>' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h
+grep -q 'GetOptionsPageUrl(JNIEnv' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h || sed -i '/void ExecuteAction(JNIEnv\* env, const extensions::ExtensionId& extension_id);/a\  std::string GetOptionsPageUrl(JNIEnv* env, const std::string& extension_id);' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h
+grep -q 'extensions/common/manifest_handlers/options_page_info.h' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc || sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/profiles/profile.h"\n#include "extensions/browser/extension_registry.h"\n#include "extensions/common/manifest_handlers/options_page_info.h"' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
+grep -q 'ExtensionsMenuDelegateAndroid::GetOptionsPageUrl' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc || sed -i '/void ExtensionsMenuDelegateAndroid::ExecuteAction(/i\
+std::string ExtensionsMenuDelegateAndroid::GetOptionsPageUrl(\
+    JNIEnv* env,\
+    const std::string& extension_id) {\
+  extensions::ExtensionRegistry* registry =\
+      extensions::ExtensionRegistry::Get(browser_->GetProfile());\
+  if (!registry) {\
+    return std::string();\
+  }\
+  const extensions::Extension* extension =\
+      registry->enabled_extensions().GetByID(extension_id);\
+  if (!extension || !extensions::OptionsPageInfo::HasOptionsPage(extension)) {\
+    return std::string();\
+  }\
+  const GURL& options_url =\
+      extensions::OptionsPageInfo::GetOptionsPage(extension);\
+  return options_url.is_valid() ? options_url.spec() : std::string();\
+}\
+' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
 sed -i '/#include "chrome\/browser\/extensions\/extension_view_host_factory.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"\n#include "chrome/browser/profiles/profile.h"\n#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"\n#include "extensions/browser/extension_registry.h"' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(\) \{\n  toolbar_android_->ShowContextMenu\(action_id_\);\n\}|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback() {\n  const extensions::Extension* extension =\n      extensions::ExtensionRegistry::Get(browser_->GetProfile())\n          ->enabled_extensions()\n          .GetByID(action_id_);\n  if (extension &&\n      extensions::ExtensionTabUtil::OpenOptionsPage(extension, browser_)) {\n    return;\n  }\n\n  toolbar_android_->ShowContextMenu(action_id_);\n}|' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 

@@ -22,12 +22,13 @@ TIMESTAMP_GNI=build/timestamp.gni
 CONTENT_SETTINGS_FEATURES=components/content_settings/core/common/features.cc
 APP_MENU_DELEGATE=chrome/android/java/src/org/chromium/chrome/browser/app/appmenu/AppMenuPropertiesDelegateImpl.java
 MENU_DELEGATE_CC=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
+MENU_DELEGATE_H=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h
 ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
 TAB_STORE=chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -63,6 +64,57 @@ grep -q 'mToolbarBridge = toolbarBridge;' "$MENU_MEDIATOR" || \
 sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> mMenuBridge.executeAction(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' "$MENU_MEDIATOR"
+sed -i 's|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|(view) -> openExtensionOptionsFromMenu(entry.id))|' "$MENU_MEDIATOR"
+grep -q 'private void openExtensionOptionsFromMenu' "$MENU_MEDIATOR" || \
+    sed -i '/private void openUrlFromMenu(String url) {/i\
+    private void openExtensionOptionsFromMenu(String extensionId) {\
+        String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);\
+        if (optionsUrl != null && !optionsUrl.isEmpty()) {\
+            openUrlFromMenu(optionsUrl);\
+            return;\
+        }\
+        if (mToolbarBridge != null) {\
+            mToolbarBridge.executeUserAction(extensionId, InvocationSource.TOOLBAR_BUTTON);\
+            return;\
+        }\
+        mMenuBridge.executeAction(extensionId);\
+    }\
+' "$MENU_MEDIATOR"
+grep -q 'getOptionsPageUrl(String extensionId)' "$BRIDGE" || \
+    sed -i '/public void executeAction(String extensionId) {/i\
+    public String getOptionsPageUrl(String extensionId) {\
+        return ExtensionsMenuBridgeJni.get()\
+                .getOptionsPageUrl(mNativeExtensionsMenuDelegateAndroid, extensionId);\
+    }\
+' "$BRIDGE"
+grep -q '^        String getOptionsPageUrl(' "$BRIDGE" || \
+    perl -0pi -e 's|(\n\s*\@NativeMethods\n\s*public interface Natives \{\n)|$1        \@JniType("std::string")\n        String getOptionsPageUrl(\n                long nativeExtensionsMenuDelegateAndroid,\n                \@JniType("std::string") String extensionId);\n\n|' "$BRIDGE"
+grep -q '#include <string>' "$MENU_DELEGATE_H" || \
+    sed -i '/^#include "base\/android\/jni_android.h"/i\#include <string>' "$MENU_DELEGATE_H"
+grep -q 'GetOptionsPageUrl(JNIEnv' "$MENU_DELEGATE_H" || \
+    sed -i '/void ExecuteAction(JNIEnv\* env, const extensions::ExtensionId& extension_id);/a\  std::string GetOptionsPageUrl(JNIEnv* env, const std::string& extension_id);' "$MENU_DELEGATE_H"
+grep -q 'extensions/common/manifest_handlers/options_page_info.h' "$MENU_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/profiles/profile.h"\n#include "extensions/browser/extension_registry.h"\n#include "extensions/common/manifest_handlers/options_page_info.h"' "$MENU_DELEGATE_CC"
+grep -q 'ExtensionsMenuDelegateAndroid::GetOptionsPageUrl' "$MENU_DELEGATE_CC" || \
+    sed -i '/void ExtensionsMenuDelegateAndroid::ExecuteAction(/i\
+std::string ExtensionsMenuDelegateAndroid::GetOptionsPageUrl(\
+    JNIEnv* env,\
+    const std::string& extension_id) {\
+  extensions::ExtensionRegistry* registry =\
+      extensions::ExtensionRegistry::Get(browser_->GetProfile());\
+  if (!registry) {\
+    return std::string();\
+  }\
+  const extensions::Extension* extension =\
+      registry->enabled_extensions().GetByID(extension_id);\
+  if (!extension || !extensions::OptionsPageInfo::HasOptionsPage(extension)) {\
+    return std::string();\
+  }\
+  const GURL& options_url =\
+      extensions::OptionsPageInfo::GetOptionsPage(extension);\
+  return options_url.is_valid() ? options_url.spec() : std::string();\
+}\
+' "$MENU_DELEGATE_CC"
 
 # When an action is disabled on internal pages such as chrome://extensions,
 # Chromium falls back to the extension context menu, whose obvious path is the
@@ -151,7 +203,7 @@ sed -i '/clearVolatileRendererCaches();/d' "$CTA"
 # to NTP so extension override logic can recreate the page instead of reopening
 # a broken saved tab on every launch.
 if grep -q 'private static boolean shouldReplaceUrlForRestore' "$TAB_STORE"; then
-    perl -0pi -e 's|private static boolean shouldReplaceUrlForRestore\(@Nullable String url\) \{\n\s*return TextUtils\.isEmpty\(url\)(?: \|\| url\.startsWith\("chrome-extension://"\))?;\n\s*\}|private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\n        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\n    }|s; s|UrlConstants\.VERSION_URL|UrlConstants.NTP_URL|g' "$TAB_STORE"
+    perl -0pi -e 's#private static boolean shouldReplaceUrlForRestore\(\@Nullable String url\) \{\n\s*return TextUtils\.isEmpty\(url\)(?: \|\| url\.startsWith\("chrome-extension://"\))?;\n\s*\}#private static boolean shouldReplaceUrlForRestore(\@Nullable String url) {\n        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\n    }#s; s#UrlConstants\.VERSION_URL#UrlConstants.NTP_URL#g' "$TAB_STORE"
 else
     grep -q 'org.chromium.components.embedder_support.util.UrlConstants' "$TAB_STORE" || \
         sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\import org.chromium.components.embedder_support.util.UrlConstants;' "$TAB_STORE"
