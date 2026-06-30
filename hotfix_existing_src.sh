@@ -158,8 +158,8 @@ grep -q 'mToolbarBridge = toolbarBridge;' "$MENU_MEDIATOR" || \
     perl -0pi -e 's|(\n[ \t]*)(mMenuBridge[ \t]*=)|$1mToolbarBridge = toolbarBridge;\n$1$2|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
-sed -i 's|(view) -> mMenuBridge.executeAction(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' "$MENU_MEDIATOR"
-sed -i 's|(view) -> openExtensionOptionsFromMenu(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' "$MENU_MEDIATOR"
+sed -i 's|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
+sed -i 's|(view) -> openExtensionOptionsFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 grep -q 'private void openExtensionOptionsFromMenu' "$MENU_MEDIATOR" || \
     sed -i '/private void openUrlFromMenu(String url) {/i\
     private void openExtensionOptionsFromMenu(String extensionId) {\
