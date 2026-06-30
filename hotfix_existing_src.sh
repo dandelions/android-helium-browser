@@ -55,10 +55,11 @@ sed -i 's|                ("std::string") String extensionId);|                @
 perl -0pi -e 's|\n        if \(mMenuBridge\.openOptionsPage\(extensionId\)\) \{\n            return;\n        \}\n||' "$MENU_MEDIATOR"
 grep -q 'org.chromium.chrome.browser.ui.toolbar.InvocationSource' "$MENU_MEDIATOR" || \
     sed -i '/import org.chromium.chrome.browser.ui.extensions.ExtensionsToolbarBridge;/a\import org.chromium.chrome.browser.ui.toolbar.InvocationSource;' "$MENU_MEDIATOR"
-grep -q 'private final ExtensionsToolbarBridge mToolbarBridge;' "$MENU_MEDIATOR" || \
-    sed -i '/private final ExtensionsMenuBridge mMenuBridge;/a\    private final ExtensionsToolbarBridge mToolbarBridge;' "$MENU_MEDIATOR"
+grep -q 'ExtensionsToolbarBridge mToolbarBridge;' "$MENU_MEDIATOR" || \
+    sed -i '/private final ExtensionsMenuBridge mMenuBridge;/a\    private ExtensionsToolbarBridge mToolbarBridge;' "$MENU_MEDIATOR"
+sed -i 's|private final ExtensionsToolbarBridge mToolbarBridge;|private ExtensionsToolbarBridge mToolbarBridge;|' "$MENU_MEDIATOR"
 grep -q 'mToolbarBridge = toolbarBridge;' "$MENU_MEDIATOR" || \
-    sed -i '/new ExtensionsMenuBridge(mTask, mProfile, toolbarBridge, \/* observer= \*\/ this);/a\        mToolbarBridge = toolbarBridge;' "$MENU_MEDIATOR"
+    perl -0pi -e 's|(\n[ \t]*)(mMenuBridge[ \t]*=)|$1mToolbarBridge = toolbarBridge;\n$1$2|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> mMenuBridge.executeAction(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' "$MENU_MEDIATOR"
