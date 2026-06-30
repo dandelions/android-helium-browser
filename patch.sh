@@ -36,7 +36,7 @@ grep -q 'mToolbarBridge = toolbarBridge;' chrome/browser/ui/android/toolbar/java
 sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
 sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
 sed -i 's|(view) -> mMenuBridge.executeAction(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
-sed -i 's|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|(view) -> openExtensionOptionsFromMenu(entry.id))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
+sed -i 's|(view) -> openExtensionOptionsFromMenu(entry.id))|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
 grep -q 'private void openExtensionOptionsFromMenu' chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java || sed -i '/private void openUrlFromMenu(String url) {/i\
     private void openExtensionOptionsFromMenu(String extensionId) {\
         String optionsUrl = mMenuBridge.getOptionsPageUrl(extensionId);\
@@ -81,7 +81,7 @@ std::string ExtensionsMenuDelegateAndroid::GetOptionsPageUrl(\
 }\
 ' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
 sed -i '/#include "chrome\/browser\/extensions\/extension_view_host_factory.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"\n#include "chrome/browser/profiles/profile.h"\n#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"\n#include "extensions/browser/extension_registry.h"' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
-perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(\) \{\n  toolbar_android_->ShowContextMenu\(action_id_\);\n\}|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback() {\n  const extensions::Extension* extension =\n      extensions::ExtensionRegistry::Get(browser_->GetProfile())\n          ->enabled_extensions()\n          .GetByID(action_id_);\n  if (extension &&\n      extensions::ExtensionTabUtil::OpenOptionsPage(extension, browser_)) {\n    return;\n  }\n\n  toolbar_android_->ShowContextMenu(action_id_);\n}|' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
+perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(\) \{\n  const extensions::Extension\* extension =\n      extensions::ExtensionRegistry::Get\(browser_->GetProfile\(\)\)\n          ->enabled_extensions\(\)\n          \.GetByID\(action_id_\);\n  if \(extension &&\n      extensions::ExtensionTabUtil::OpenOptionsPage\(extension, browser_\)\) \{\n    return;\n  \}\n\n  toolbar_android_->ShowContextMenu\(action_id_\);\n\}|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback() {\n  toolbar_android_->ShowContextMenu(action_id_);\n}|' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 
 # search
 sed -i 's|BASE_FEATURE(kOmniboxSiteSearch, DISABLED);|BASE_FEATURE(kOmniboxSiteSearch, ENABLED);|' components/omnibox/common/omnibox_features.cc
@@ -354,6 +354,23 @@ sed -i '/case ui::mojom::WindowOpenDisposition::NEW_FOREGROUND_TAB:/,/return tru
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_BACKGROUND_TAB:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_POPUP:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
 sed -i '/case ui::mojom::WindowOpenDisposition::NEW_WINDOW:/,/return true;/ s|return true;|if (base::CommandLine::ForCurrentProcess()->HasSwitch("open-new-links-in-current-tab"))\n          *out = WindowOpenDisposition::CURRENT_TAB;\n        return true;|' ui/base/mojom/window_open_disposition_mojom_traits.h
+fi
+grep -q '#include "base/command_line.h"' content/browser/web_contents/web_contents_impl.cc || sed -i '0,/^#include /s|^#include |#include "base/command_line.h"\n#include |' content/browser/web_contents/web_contents_impl.cc
+if ! grep -q 'Helium: force new-tab OpenURL dispositions into current tab' content/browser/web_contents/web_contents_impl.cc; then
+sed -i '/WebContents\* WebContentsImpl::OpenURL(/,/^#if DCHECK_IS_ON()/ { /^#if DCHECK_IS_ON()/i\
+  // Helium: force new-tab OpenURL dispositions into current tab.\
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(\
+          "open-new-links-in-current-tab") \&\&\
+      (params.disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||\
+       params.disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB ||\
+       params.disposition == WindowOpenDisposition::NEW_POPUP ||\
+       params.disposition == WindowOpenDisposition::NEW_WINDOW)) {\
+    OpenURLParams current_tab_params(params);\
+    current_tab_params.disposition = WindowOpenDisposition::CURRENT_TAB;\
+    return OpenURL(current_tab_params, std::move(navigation_handle_callback));\
+  }\
+
+}' content/browser/web_contents/web_contents_impl.cc
 fi
 
 # crbug.com/helium: disable tab close undo snackbar
