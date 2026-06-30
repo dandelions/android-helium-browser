@@ -219,16 +219,16 @@ perl -0pi -e 's|            if \(debug\(\)\) Log\.i\(TAG, "startActivity"\);\n  
 # ext: isolate top-level navigations from extension blockers
 sed -i '/case DNRRequestAction::Type::BLOCK:/,/case DNRRequestAction::Type::ALLOW:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' extensions/browser/api/web_request/extension_web_request_event_router.cc
 sed -i '/case DNRRequestAction::Type::REDIRECT:/,/case DNRRequestAction::Type::MODIFY_HEADERS:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' extensions/browser/api/web_request/extension_web_request_event_router.cc
-sed -i '/  const bool redirected =/i\
+grep -q 'Helium: ignore extension main-frame cancel/redirect' extensions/browser/api/web_request/extension_web_request_event_router.cc || sed -i '/  const bool redirected =/i\
+  // Helium: ignore extension main-frame cancel/redirect results. Ad blockers\
+  // can otherwise leave a restored startup tab with an empty WebContents.\
   if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) {\
     canceled_by_extension.reset();\
-    if (blocked_request.new_url \&\& !blocked_request.new_url->is_empty() \&\&\
-        !blocked_request.new_url->SchemeIs("chrome-extension")) {\
+    if (blocked_request.new_url \&\& !blocked_request.new_url->is_empty()) {\
       *blocked_request.new_url = GURL();\
     }\
   }\
 ' extensions/browser/api/web_request/extension_web_request_event_router.cc
-perl -0pi -e 's|  if \(request->web_request_type == WebRequestResourceType::MAIN_FRAME\) \{\n    canceled_by_extension\.reset\(\);\n    if \(blocked_request\.new_url && !blocked_request\.new_url->is_empty\(\) &&\n        !blocked_request\.new_url->SchemeIs\("chrome-extension"\)\) \{\n      \*blocked_request\.new_url = GURL\(\);\n    \}\n  \}|  if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) {\n    canceled_by_extension.reset();\n    if (blocked_request.new_url && !blocked_request.new_url->is_empty()) {\n      *blocked_request.new_url = GURL();\n    }\n  }|' extensions/browser/api/web_request/extension_web_request_event_router.cc
 
 # ext: keep early content-script injection from breaking page startup
 sed -i '/extensions_features::kExtensionsBackgroundCompilation));/a\
@@ -354,7 +354,12 @@ import org.chromium.components.embedder_support.util.UrlConstants;' chrome/andro
 sed -i '/private static boolean sDeferredStartupComplete;/a\
 \
     private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\
-        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\
+        return TextUtils.isEmpty(url)\
+                || url.startsWith("chrome-extension://")\
+                || url.equals("about:blank")\
+                || url.startsWith("chrome://newtab")\
+                || url.startsWith("chrome://new-tab-page")\
+                || url.startsWith("chrome-native://newtab");\
     }\
 \
     private static String safeUrlForRestore(@Nullable String url) {\

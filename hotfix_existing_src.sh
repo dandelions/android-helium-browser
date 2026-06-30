@@ -238,7 +238,18 @@ if ! grep -q 'WebRequestResourceType::MAIN_FRAME) { break; }' "$WEB_REQUEST_ROUT
     sed -i '/case DNRRequestAction::Type::BLOCK:/,/case DNRRequestAction::Type::ALLOW:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' "$WEB_REQUEST_ROUTER"
     sed -i '/case DNRRequestAction::Type::REDIRECT:/,/case DNRRequestAction::Type::MODIFY_HEADERS:/ s|ClearPendingCallbacks(browser_context, \*request);|if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) { break; }\n          ClearPendingCallbacks(browser_context, *request);|' "$WEB_REQUEST_ROUTER"
 fi
-perl -0pi -e 's|  if \(request->web_request_type == WebRequestResourceType::MAIN_FRAME\) \{\n    canceled_by_extension\.reset\(\);\n    if \(blocked_request\.new_url && !blocked_request\.new_url->is_empty\(\) &&\n        !blocked_request\.new_url->SchemeIs\("chrome-extension"\)\) \{\n      \*blocked_request\.new_url = GURL\(\);\n    \}\n  \}|  if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) {\n    canceled_by_extension.reset();\n    if (blocked_request.new_url && !blocked_request.new_url->is_empty()) {\n      *blocked_request.new_url = GURL();\n    }\n  }|' "$WEB_REQUEST_ROUTER"
+perl -0pi -e 's|  if \(request->web_request_type == WebRequestResourceType::MAIN_FRAME\) \{\n    canceled_by_extension\.reset\(\);\n    if \(blocked_request\.new_url && !blocked_request\.new_url->is_empty\(\) &&\n        !blocked_request\.new_url->SchemeIs\("chrome-extension"\)\) \{\n      \*blocked_request\.new_url = GURL\(\);\n    \}\n  \}|  // Helium: ignore extension main-frame cancel/redirect results. Ad blockers\n  // can otherwise leave a restored startup tab with an empty WebContents.\n  if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) {\n    canceled_by_extension.reset();\n    if (blocked_request.new_url && !blocked_request.new_url->is_empty()) {\n      *blocked_request.new_url = GURL();\n    }\n  }|' "$WEB_REQUEST_ROUTER"
+grep -q 'canceled_by_extension.reset();' "$WEB_REQUEST_ROUTER" || \
+    sed -i '/  const bool redirected =/i\
+  // Helium: ignore extension main-frame cancel/redirect results. Ad blockers\
+  // can otherwise leave a restored startup tab with an empty WebContents.\
+  if (request->web_request_type == WebRequestResourceType::MAIN_FRAME) {\
+    canceled_by_extension.reset();\
+    if (blocked_request.new_url \&\& !blocked_request.new_url->is_empty()) {\
+      *blocked_request.new_url = GURL();\
+    }\
+  }\
+' "$WEB_REQUEST_ROUTER"
 
 # Do not fake developer mode in the UI. Fresh installs should start with
 # developer mode disabled, and the load-unpacked backend checks the real pref.
@@ -252,14 +263,19 @@ sed -i '/clearVolatileRendererCaches();/d' "$CTA"
 # to NTP so extension override logic can recreate the page instead of reopening
 # a broken saved tab on every launch.
 if grep -q 'private static boolean shouldReplaceUrlForRestore' "$TAB_STORE"; then
-    perl -0pi -e 's#private static boolean shouldReplaceUrlForRestore\(\@Nullable String url\) \{\n\s*return TextUtils\.isEmpty\(url\)(?: \|\| url\.startsWith\("chrome-extension://"\))?;\n\s*\}#private static boolean shouldReplaceUrlForRestore(\@Nullable String url) {\n        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\n    }#s; s#UrlConstants\.VERSION_URL#UrlConstants.NTP_URL#g' "$TAB_STORE"
+    perl -0pi -e 's#private static boolean shouldReplaceUrlForRestore\(\@Nullable String url\) \{\n.*?\n    \}#private static boolean shouldReplaceUrlForRestore(\@Nullable String url) {\n        return TextUtils.isEmpty(url)\n                || url.startsWith("chrome-extension://")\n                || url.equals("about:blank")\n                || url.startsWith("chrome://newtab")\n                || url.startsWith("chrome://new-tab-page")\n                || url.startsWith("chrome-native://newtab");\n    }#s; s#UrlConstants\.VERSION_URL#UrlConstants.NTP_URL#g' "$TAB_STORE"
 else
     grep -q 'org.chromium.components.embedder_support.util.UrlConstants' "$TAB_STORE" || \
         sed -i '/import org.chromium.components.embedder_support.util.UrlUtilities;/i\import org.chromium.components.embedder_support.util.UrlConstants;' "$TAB_STORE"
     sed -i '/private static boolean sDeferredStartupComplete;/a\
 \
     private static boolean shouldReplaceUrlForRestore(@Nullable String url) {\
-        return TextUtils.isEmpty(url) || url.startsWith("chrome-extension://");\
+        return TextUtils.isEmpty(url)\
+                || url.startsWith("chrome-extension://")\
+                || url.equals("about:blank")\
+                || url.startsWith("chrome://newtab")\
+                || url.startsWith("chrome://new-tab-page")\
+                || url.startsWith("chrome-native://newtab");\
     }\
 \
     private static String safeUrlForRestore(@Nullable String url) {\
