@@ -24,6 +24,7 @@ APP_MENU_DELEGATE=chrome/android/java/src/org/chromium/chrome/browser/app/appmen
 MENU_DELEGATE_CC=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
 MENU_DELEGATE_H=chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h
 ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
+ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
 TAB_STORE=chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
@@ -35,7 +36,7 @@ NAV_POLICY=content/renderer/render_frame_impl.cc
 WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_LIST_MEDIATOR" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -160,6 +161,7 @@ sed -i 's|(view) -> openExtensionFromMenu(entry.id))|(view) -> mMenuBridge.execu
 sed -i 's|(view) -> openUrlFromMenu(UrlConstants.CHROME_EXTENSIONS_ID_URL + entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> mToolbarBridge.executeUserAction(entry.id, InvocationSource.TOOLBAR_BUTTON))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
 sed -i 's|(view) -> openExtensionOptionsFromMenu(entry.id))|(view) -> mMenuBridge.executeAction(entry.id))|' "$MENU_MEDIATOR"
+perl -0pi -e 's|if \(hasPoppedOutAction\(\) && itemWidth <= availableWidth\) \{\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        \} else \{\n            mCanShowPoppedOutAction = false;\n            return 0;\n        \}|if (hasPoppedOutAction()) {\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        } else {\n            mCanShowPoppedOutAction = false;\n            return 0;\n        }|' "$ACTION_LIST_MEDIATOR"
 grep -q 'private void openExtensionOptionsFromMenu' "$MENU_MEDIATOR" || \
     sed -i '/private void openUrlFromMenu(String url) {/i\
     private void openExtensionOptionsFromMenu(String extensionId) {\
