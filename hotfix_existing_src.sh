@@ -36,6 +36,9 @@ MINIMIZED_FEATURE_UTILS=chrome/android/java/src/org/chromium/chrome/browser/cust
 DEVTOOLS_INTENT_DATA_PROVIDER=chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsIntentDataProvider.java
 BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/customtabs/BaseCustomTabRootUiCoordinator.java
 DEVTOOLS_ACTIVITY=chrome/android/java/src/org/chromium/chrome/browser/devtools/DevToolsActivity.java
+DEVTOOLS_WINDOW_ANDROID_JAVA=chrome/browser/devtools/android/java/src/org/chromium/chrome/browser/devtools/DevToolsWindowAndroid.java
+DEVTOOLS_WINDOW_ANDROID_CC=chrome/browser/devtools/android/devtools_window_android.cc
+DEVTOOLS_WINDOW_CC=chrome/browser/devtools/devtools_window.cc
 JS_DIALOG_MANAGER=components/javascript_dialogs/app_modal_dialog_manager.cc
 UNDO_BAR=chrome/android/java/src/org/chromium/chrome/browser/undo_tab_close_snackbar/UndoBarController.java
 UNGOOGLED_FLAGS=chrome/browser/ungoogled_flag_entries.h
@@ -44,7 +47,7 @@ NAV_POLICY=content/renderer/render_frame_impl.cc
 WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -83,8 +86,32 @@ sed -i '/public boolean isCloseButtonEnabled()/,/^    }/ s|return false;|return 
 sed -i 's#connection.shouldEnableOmniboxForIntent(mIntentDataProvider.get());#connection.shouldEnableOmniboxForIntent(mIntentDataProvider.get())\n                        || mIntentDataProvider.get().getActivityType() == ActivityType.DEV_TOOLS;#' "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR"
 grep -q 'org.chromium.cc.input.BrowserControlsState' "$DEVTOOLS_ACTIVITY" || \
     sed -i '/import org.chromium.base.ContextUtils;/a\import org.chromium.cc.input.BrowserControlsState;' "$DEVTOOLS_ACTIVITY"
+grep -q 'android.view.Gravity' "$DEVTOOLS_ACTIVITY" || \
+    sed -i '/import android.content.Intent;/a\import android.view.Gravity;' "$DEVTOOLS_ACTIVITY"
+grep -q 'android.view.ViewGroup' "$DEVTOOLS_ACTIVITY" || \
+    sed -i '/import android.view.Gravity;/a\import android.view.ViewGroup;' "$DEVTOOLS_ACTIVITY"
+grep -q 'android.widget.Button' "$DEVTOOLS_ACTIVITY" || \
+    sed -i '/import android.view.ViewGroup;/a\import android.widget.Button;' "$DEVTOOLS_ACTIVITY"
+grep -q 'android.widget.FrameLayout' "$DEVTOOLS_ACTIVITY" || \
+    sed -i '/import android.widget.Button;/a\import android.widget.FrameLayout;' "$DEVTOOLS_ACTIVITY"
+grep -q 'addInspectedPageSwitcher(WebContents devToolsWebContents)' "$DEVTOOLS_ACTIVITY" || \
+    perl -0pi -e 's~(\n    \@Override\n    public void finishNativeInitialization\(\) \{)~\n    private void addInspectedPageSwitcher(WebContents devToolsWebContents) {\n        Button switchButton = new Button(this);\n        switchButton.setText("Page");\n        switchButton.setAllCaps(false);\n        switchButton.setOnClickListener(\n                v -> DevToolsWindowAndroid.activateInspectedPage(devToolsWebContents));\n        FrameLayout.LayoutParams params =\n                new FrameLayout.LayoutParams(\n                        ViewGroup.LayoutParams.WRAP_CONTENT,\n                        ViewGroup.LayoutParams.WRAP_CONTENT,\n                        Gravity.TOP | Gravity.END);\n        int margin = (int) (8 * getResources().getDisplayMetrics().density);\n        params.setMargins(margin, margin, margin, margin);\n        addContentView(switchButton, params);\n    }\n$1~' "$DEVTOOLS_ACTIVITY"
+grep -q 'addInspectedPageSwitcher(webContents)' "$DEVTOOLS_ACTIVITY" || \
+    perl -0pi -e 's~(DevToolsWindowAndroid\.attachToBrowser\(\n                    webContents, task\.getOrCreateNativeBrowserWindowPtr\(profile\)\);\n)~$1            addInspectedPageSwitcher(webContents);\n~' "$DEVTOOLS_ACTIVITY"
 grep -q 'setBrowserControlsState(BrowserControlsState.SHOWN)' "$DEVTOOLS_ACTIVITY" || \
     sed -i '/super.finishNativeInitialization();/a\        getCustomTabToolbarCoordinator().setBrowserControlsState(BrowserControlsState.SHOWN);' "$DEVTOOLS_ACTIVITY"
+grep -q 'public static void activateInspectedPage' "$DEVTOOLS_WINDOW_ANDROID_JAVA" || \
+    perl -0pi -e 's~(\n    /\*\*\n     \* Attaches the DevTools frontend web contents to the browser window\.)~\n    public static void activateInspectedPage(WebContents webContents) {\n        DevToolsWindowAndroidJni.get().activateInspectedPage(webContents);\n    }\n$1~' "$DEVTOOLS_WINDOW_ANDROID_JAVA"
+grep -q '^        void activateInspectedPage(WebContents webContents);' "$DEVTOOLS_WINDOW_ANDROID_JAVA" || \
+    sed -i '/void attachToBrowser(WebContents webContents, long nativeBrowserWindowPtr);/i\        void activateInspectedPage(WebContents webContents);\n' "$DEVTOOLS_WINDOW_ANDROID_JAVA"
+grep -q 'web_contents_delegate.h' "$DEVTOOLS_WINDOW_ANDROID_CC" || \
+    sed -i '/#include "content\/public\/browser\/web_contents.h"/a\#include "content/public/browser/web_contents_delegate.h"' "$DEVTOOLS_WINDOW_ANDROID_CC"
+grep -q 'JNI_DevToolsWindowAndroid_ActivateInspectedPage' "$DEVTOOLS_WINDOW_ANDROID_CC" || \
+    perl -0pi -e 's~(\nstatic void JNI_DevToolsWindowAndroid_AttachToBrowser\()~\nstatic void JNI_DevToolsWindowAndroid_ActivateInspectedPage(\n    JNIEnv* env,\n    const jni_zero::JavaRef<jobject>& java_web_contents) {\n#if BUILDFLAG(ENABLE_DEVTOOLS_FRONTEND)\n  content::WebContents* web_contents =\n      content::WebContents::FromJavaWebContents(java_web_contents);\n  DevToolsWindow* window = DevToolsWindow::AsDevToolsWindow(web_contents);\n  if (!window) {\n    return;\n  }\n  content::WebContents* inspected_web_contents =\n      window->GetInspectedWebContents();\n  if (!inspected_web_contents || !inspected_web_contents->GetDelegate()) {\n    return;\n  }\n  inspected_web_contents->GetDelegate()->ActivateContents(\n      inspected_web_contents);\n  inspected_web_contents->Focus();\n#endif\n}\n$1~' "$DEVTOOLS_WINDOW_ANDROID_CC"
+perl -0pi -e 's~(#if BUILDFLAG\(IS_ANDROID\)\n)    NOTIMPLEMENTED\(\);\n(#else\n    if \(browser_\) \{)~$1    WebContents* inspected_tab = GetInspectedWebContents();\n    if (inspected_tab && inspected_tab->GetDelegate()) {\n      inspected_tab->GetDelegate()->ActivateContents(inspected_tab);\n      inspected_tab->Focus();\n    }\n$2~' "$DEVTOOLS_WINDOW_CC"
+perl -0pi -e 's~(#if BUILDFLAG\(IS_ANDROID\)\n)  NOTIMPLEMENTED\(\);\n(#else\n  if \(is_docked_ && GetInspectedBrowserWindow\(\)\) \{)~$1  if (main_web_contents_ && main_web_contents_->GetDelegate()) {\n    main_web_contents_->GetDelegate()->ActivateContents(main_web_contents_);\n    main_web_contents_->Focus();\n  }\n$2~' "$DEVTOOLS_WINDOW_CC"
+grep -q 'InspectElementCompleted.AndroidActivateWindow' "$DEVTOOLS_WINDOW_CC" || \
+    perl -0pi -e 's~void DevToolsWindow::InspectElementCompleted\(\) \{\n  if \(!inspect_element_start_time_\.is_null\(\)\) \{\n    UMA_HISTOGRAM_TIMES\("DevTools\.InspectElement",\n                        base::TimeTicks::Now\(\) - inspect_element_start_time_\);\n    inspect_element_start_time_ = base::TimeTicks\(\);\n  \}\n\}~void DevToolsWindow::InspectElementCompleted() {\n  if (!inspect_element_start_time_.is_null()) {\n    UMA_HISTOGRAM_TIMES("DevTools.InspectElement",\n                        base::TimeTicks::Now() - inspect_element_start_time_);\n    inspect_element_start_time_ = base::TimeTicks();\n  }\n#if BUILDFLAG(IS_ANDROID)\n  // InspectElementCompleted.AndroidActivateWindow: return to DevTools after picking an element.\n  ActivateWindow();\n#endif\n}~' "$DEVTOOLS_WINDOW_CC"
 
 # Always allow closing/replacing tabs without showing a page-provided
 # beforeunload confirmation. This only affects beforeunload dialogs; normal
