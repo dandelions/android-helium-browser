@@ -30,6 +30,7 @@ MENU_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
 TAB_STORE=chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabPersistentStoreImpl.java
+ANDROID_MANIFEST=chrome/android/java/AndroidManifest.xml
 JS_DIALOG_MANAGER=components/javascript_dialogs/app_modal_dialog_manager.cc
 UNDO_BAR=chrome/android/java/src/org/chromium/chrome/browser/undo_tab_close_snackbar/UndoBarController.java
 UNGOOGLED_FLAGS=chrome/browser/ungoogled_flag_entries.h
@@ -38,7 +39,7 @@ NAV_POLICY=content/renderer/render_frame_impl.cc
 WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$TAB_STORE" "$ANDROID_MANIFEST" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -55,6 +56,10 @@ perl -0pi -e 's|current_toolchain == default_toolchain,|current_toolchain == def
 # so mirror the normal patch here for existing Chromium source trees.
 perl -0pi -e 's/BASE_FEATURE\(kDarkenWebsitesCheckboxInThemesSetting,\n\s*base::FEATURE_DISABLED_BY_DEFAULT\);/BASE_FEATURE(kDarkenWebsitesCheckboxInThemesSetting,\n             base::FEATURE_ENABLED_BY_DEFAULT);/' "$CONTENT_SETTINGS_FEATURES"
 perl -0pi -e 's/return currentTab != null && !isNativePage && isFlagEnabled && isFeatureEnabled;/return currentTab != null && !isNativePage;/g; s/return currentTab != null[^\n]*isFeatureEnabled[^\n]*!isNativePage;/return currentTab != null && !isNativePage;/g' "$APP_MENU_DELEGATE"
+
+# Make Android DevTools behave as a normal desktop-mode window.
+perl -0pi -e 's|(<activity\n            android:name="org\.chromium\.chrome\.browser\.devtools\.DevToolsActivity"\n            android:theme="\@style/Theme\.Chromium\.Activity"\n            android:exported="false"\n)(?!            android:resizeableActivity="true"\n)|$1            android:resizeableActivity="true"\n|' "$ANDROID_MANIFEST"
+perl -0pi -e 's|(<activity\n            android:name="org\.chromium\.chrome\.browser\.devtools\.DevToolsActivity"(?:(?!</activity>).)*?            \{\{ self\.extra_web_rendering_activity_definitions\(\) \}\}\n)(?!            <property android:name="android\.window\.PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI")|$1            <property android:name="android.window.PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI"\n                android:value="true" />\n|s' "$ANDROID_MANIFEST"
 
 # Always allow closing/replacing tabs without showing a page-provided
 # beforeunload confirmation. This only affects beforeunload dialogs; normal
