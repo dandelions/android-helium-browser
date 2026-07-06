@@ -93,3 +93,16 @@ To build these releases yourself via CI (e.g. GitHub Actions), fork this reposit
 ## Credits
 
 This project would not have been possible without the huge community contributions from [Vanadium](https://github.com/GrapheneOS/Vanadium), [Helium](https://github.com/imputnet/helium), as well as [ungoogled-chromium](https://github.com/ungoogled-software/ungoogled-chromium) and various other upstream projects. All credit goes to the original authors and contributors. This project started around the same time as [Helium Browser for Linux](https://github.com/imputnet/helium-linux) but it is not officially affiliated with the upstream [Helium](https://github.com/imputnet/helium) project.
+
+## diffent things
+Here are the changes/updates I've made:
+
+Extension Support: Enhanced the project to support CRX/ZIP archives, whereas it previously only supported loading unpacked extensions.
+
+Extension UI/UX: Improved the interaction flow. Previously, extension options could only be accessed if the extension was pinned to the address bar. I have updated it so that clicking the Extension Icon and then selecting the specific extension will expand its options.
+
+Dark Mode: Implemented tweaks/fixes for Dark Mode.
+
+Developer Tools Integration: Docked the Developer Tools into the main window. It previously opened in a separate window, which made it impossible to inspect elements within the monitored window.
+
+Special thanks to linux.do (https://linux.do/) for providing the platform and the related community-contributed sites.
