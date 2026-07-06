@@ -27,6 +27,7 @@ ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegat
 ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate_android.h
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
 MENU_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
+MENU_VIEW_MODEL=chrome/browser/ui/extensions/extensions_menu_view_model.cc
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
 EXTENSION_PREFS=extensions/browser/extension_prefs.cc
@@ -48,7 +49,7 @@ NAV_POLICY=content/renderer/render_frame_impl.cc
 WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -531,6 +532,14 @@ grep -q 'chrome/browser/profiles/profile.h' "$MENU_DELEGATE_CC" || \
 
 # Keep local zip/crx/unpacked extensions out of WebStore content verification.
 sed -i 's|if (!InstallVerifier::IsFromStore(extension, context_)) {|if (!extension.from_webstore()) {|' "$VERIFIER"
+
+# Show extension-provided per-tab action titles in the Android extensions
+# menu. Proxy managers such as SwitchyOmega/ZeroOmega update this title with
+# the current page's matched proxy profile, while the stock Android menu only
+# displayed the static extension name.
+grep -q 'build/build_config.h' "$MENU_VIEW_MODEL" || \
+    sed -i '/#include "base\/metrics\/user_metrics_action.h"/a\#include "build/build_config.h"' "$MENU_VIEW_MODEL"
+perl -0pi -e 's|  ExtensionsMenuViewModel::ControlState button_state;\n  button_state\.text = action_model->GetActionName\(\);|  ExtensionsMenuViewModel::ControlState button_state;\n#if BUILDFLAG(IS_ANDROID)\n  std::u16string action_title =\n      web_contents ? action_model->GetActionTitle(web_contents)\n                   : std::u16string();\n  button_state.text = action_title.empty() ? action_model->GetActionName()\n                                           : action_title;\n#else\n  button_state.text = action_model->GetActionName();\n#endif|' "$MENU_VIEW_MODEL"
 
 # Android does not expose Chrome's desktop "Allow in incognito" extension
 # toggle. Treat installed extensions as incognito-enabled so proxy extensions
