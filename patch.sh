@@ -725,3 +725,58 @@ sed -i 's/|| mSupportedProfileType == SupportedProfileType.REGULAR) {/|| mSuppor
 sed -i 's/|| mSupportedProfileType == SupportedProfileType.OFF_THE_RECORD) {/|| mSupportedProfileType == SupportedProfileType.OFF_THE_RECORD || mSupportedProfileType == SupportedProfileType.MIXED) {/' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 
 export PATCHED=1
+
+# crbug.com/helium: Android extension popup should see active incognito tab.
+if [ -f "$TABS_API_CC" ]; then
+    grep -q 'build/build_config.h' "$TABS_API_CC" || \
+        sed -i '/#include "base\/values.h"/a\#include "build/build_config.h"' "$TABS_API_CC"
+    python3 - "$TABS_API_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+if "helium_android_incognito_direct_query" not in text:
+    old = """  Profile* profile = Profile::FromBrowserContext(browser_context());
+"""
+    new = """#if BUILDFLAG(IS_ANDROID)
+  const bool helium_android_incognito_direct_query =
+      query_info_.active && *query_info_.active &&
+      ((query_info_.last_focused_window && *query_info_.last_focused_window) ||
+       (query_info_.current_window && *query_info_.current_window) ||
+       window_id == extension_misc::kCurrentWindowId) &&
+      !query_info_.url && index < 0 && window_type.empty();
+  if (helium_android_incognito_direct_query) {
+    for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
+      Profile* candidate_profile = browser->GetProfile();
+      if (!candidate_profile || !candidate_profile->IsOffTheRecord()) {
+        continue;
+      }
+      TabListInterface* tab_list = TabListInterface::From(browser);
+      if (!tab_list) {
+        continue;
+      }
+      ::tabs::TabInterface* tab = tab_list->GetActiveTab();
+      if (!tab || !tab->GetContents()) {
+        continue;
+      }
+      base::ListValue direct_result;
+      ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+          ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+      direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                               tab->GetContents(), dont_scrub, extension(),
+                               tab_list, tab_list->GetActiveIndex())
+                               .ToValue());
+      return RespondNow(WithArguments(std::move(direct_result)));
+    }
+  }
+#endif
+
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+"""
+    if old not in text:
+        raise SystemExit(f"pattern not found in {path}")
+    text = text.replace(old, new, 1)
+path.write_text(text)
+PYCODE
+fi
