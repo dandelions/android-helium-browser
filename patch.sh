@@ -570,60 +570,6 @@ perl -0pi -e 's|private @Nullable WebContents getCurrentWebContents\(\) {
         if \(currentTab == null\) currentTab = mCurrentTabSupplier.get\(\);
         return currentTab != null \? currentTab.getWebContents\(\) : null;
     }|private @Nullable WebContents getCurrentWebContents() {        Tab currentTab = null;        if (mTabModelSelector != null) {            TabModel incognitoModel = mTabModelSelector.getModel(true);            Tab incognitoTab = incognitoModel.getCurrentTabSupplier().get();            if (incognitoTab != null \&\& incognitoTab.getWebContents() != null) {                currentTab = incognitoTab;            }            if (currentTab == null) currentTab = mTabModelSelector.getCurrentTab();        }        if (currentTab == null) currentTab = mCurrentTabSupplier.get();        return currentTab != null ? currentTab.getWebContents() : null;    }|' "$MENU_MEDIATOR"
-# rebuild getCurrentWebContents once after all legacy migrations
-python3 - "$MENU_MEDIATOR" <<'PYCODE'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text()
-needle = "private @Nullable WebContents getCurrentWebContents() {"
-while True:
-    pos = text.find(needle)
-    if pos < 0:
-        break
-    start = text.rfind("\n", 0, pos)
-    start = 0 if start < 0 else start
-    brace = text.find("{", pos)
-    depth = 0
-    end = None
-    for idx in range(brace, len(text)):
-        if text[idx] == "{":
-            depth += 1
-        elif text[idx] == "}":
-            depth -= 1
-            if depth == 0:
-                end = idx + 1
-                while end < len(text) and text[end] in " \t\r\n":
-                    end += 1
-                break
-    if end is None:
-        break
-    text = text[:start] + "\n" + text[end:]
-helper = "\n".join([
-    "",
-    "    private @Nullable WebContents getCurrentWebContents() {",
-    "        Tab currentTab = null;",
-    "        if (mTabModelSelector != null) {",
-    "            TabModel incognitoModel = mTabModelSelector.getModel(true);",
-    "            Tab incognitoTab = incognitoModel.getCurrentTabSupplier().get();",
-    "            if (incognitoTab != null && incognitoTab.getWebContents() != null) {",
-    "                currentTab = incognitoTab;",
-    "            }",
-    "            if (currentTab == null) currentTab = mTabModelSelector.getCurrentTab();",
-    "        }",
-    "        if (currentTab == null) currentTab = mCurrentTabSupplier.get();",
-    "        return currentTab != null ? currentTab.getWebContents() : null;",
-    "    }",
-    "",
-    "",
-])
-marker = "    private @ExtensionsMenuProperties.Page int getCurrentPage()"
-if marker not in text:
-    raise SystemExit("getCurrentPage marker not found")
-text = text.replace(marker, helper + marker, 1)
-path.write_text(text)
-PYCODE
 sed -i 's|mMenuBridge.getMenuEntry(actionIndex)|mMenuBridge.getMenuEntry(actionIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getMenuEntry(newIndex)|mMenuBridge.getMenuEntry(newIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getActionIcon(actionIndex)|mMenuBridge.getActionIcon(actionIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
