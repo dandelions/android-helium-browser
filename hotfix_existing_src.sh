@@ -48,8 +48,9 @@ ABOUT_FLAGS=chrome/browser/about_flags.cc
 NAV_POLICY=content/renderer/render_frame_impl.cc
 WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
+TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 
-for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL"; do
+for file in "$BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -594,7 +595,10 @@ PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || \
     sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab currentTab = mCurrentTabSupplier.get();\
+        Tab currentTab = mTabModelSelector.getCurrentTab();\
+        if (currentTab == null) {\
+            currentTab = mCurrentTabSupplier.get();\
+        }\
         return currentTab != null ? currentTab.getWebContents() : null;\
     }\
 \
@@ -613,11 +617,18 @@ class WebContents;\
 }  // namespace content\
 \
 ' "$MENU_DELEGATE_H"
+grep -q 'GetLastAndroidExtensionActionTabId' "$MENU_DELEGATE_H" || \
+    sed -i '/namespace extensions {/a\
+int GetLastAndroidExtensionActionTabId();\
+\
+' "$MENU_DELEGATE_H"
 perl -0pi -e 's|void ExecuteAction\(JNIEnv\* env, const extensions::ExtensionId& extension_id\);|void ExecuteAction(JNIEnv* env,\n                     const extensions::ExtensionId& extension_id,\n                     content::WebContents* web_contents);|' "$MENU_DELEGATE_H"
 perl -0pi -e 's|base::android::ScopedJavaLocalRef<jobject> GetActionIcon\(JNIEnv\* env,\n                                                           int action_index\);|base::android::ScopedJavaLocalRef<jobject> GetActionIcon(\n      JNIEnv* env,\n      int action_index,\n      content::WebContents* web_contents);|' "$MENU_DELEGATE_H"
 perl -0pi -e 's|base::android::ScopedJavaLocalRef<jobject> GetMenuEntry\(JNIEnv\* env,\n                                                          int action_index\);|base::android::ScopedJavaLocalRef<jobject> GetMenuEntry(\n      JNIEnv* env,\n      int action_index,\n      content::WebContents* web_contents);|' "$MENU_DELEGATE_H"
 perl -0pi -e 's|std::vector<base::android::ScopedJavaLocalRef<jobject>> GetMenuEntries\(\n      JNIEnv\* env\);|std::vector<base::android::ScopedJavaLocalRef<jobject>> GetMenuEntries(\n      JNIEnv* env,\n      content::WebContents* web_contents);|' "$MENU_DELEGATE_H"
 
+grep -q 'chrome/browser/extensions/extension_tab_util.h' "$MENU_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$MENU_DELEGATE_CC"
 grep -q 'chrome/browser/tab_list/tab_list_interface.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/tab_list/tab_list_interface.h"' "$MENU_DELEGATE_CC"
 grep -q 'chrome/browser/ui/toolbar/toolbar_action_view_model.h' "$MENU_DELEGATE_CC" || \
@@ -626,7 +637,20 @@ grep -q 'components/tabs/public/tab_interface.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/extensions\/extensions_menu_view_model.h"/a\#include "components/tabs/public/tab_interface.h"' "$MENU_DELEGATE_CC"
 grep -q 'extensions/browser/extension_registry.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "components\/tabs\/public\/tab_interface.h"/a\#include "extensions/browser/extension_registry.h"' "$MENU_DELEGATE_CC"
+grep -q 'g_last_android_extension_action_tab_id' "$MENU_DELEGATE_CC" || \
+    sed -i '/constexpr gfx::Size kActionIconSize = gfx::Size(24, 24);/a\
+int g_last_android_extension_action_tab_id = -1;\
+' "$MENU_DELEGATE_CC"
+grep -q 'int GetLastAndroidExtensionActionTabId()' "$MENU_DELEGATE_CC" || \
+    sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
+int GetLastAndroidExtensionActionTabId() {\
+  return g_last_android_extension_action_tab_id;\
+}\
+\
+' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id\) \{\n  menu_model_->ExecuteAction\(extension_id\);\n\}|void ExtensionsMenuDelegateAndroid::ExecuteAction(\n    JNIEnv* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents* web_contents) {\n  if (web_contents) {\n    tabs::TabInterface* tab =\n        tabs::TabInterface::MaybeGetFromContents(web_contents);\n    BrowserWindowInterface* action_browser =\n        tab ? tab->GetBrowserWindowInterface() : nullptr;\n    TabListInterface* tab_list =\n        action_browser ? TabListInterface::From(action_browser) : nullptr;\n    extensions::ExtensionRegistry* registry =\n        action_browser\n            ? extensions::ExtensionRegistry::Get(action_browser->GetProfile())\n            : nullptr;\n    if (tab_list \&\& registry \&\&\n        registry->enabled_extensions().Contains(extension_id)) {\n      tab_list->ActivateTab(tab->GetHandle());\n      auto action_model = ExtensionActionViewModel::Create(\n          extension_id, action_browser,\n          std::make_unique<ExtensionActionDelegateAndroid>(\n              action_browser, extension_id, toolbar_android_, java_object_));\n      action_model->ExecuteUserAction(\n          ToolbarActionViewModel::InvocationSource::kMenuEntry);\n      return;\n    }\n  }\n\n  menu_model_->ExecuteAction(extension_id);\n}|' "$MENU_DELEGATE_CC"
+grep -q 'g_last_android_extension_action_tab_id = ExtensionTabUtil::GetTabId(web_contents)' "$MENU_DELEGATE_CC" || \
+    perl -0pi -e 's|(void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents\* web_contents\) \{\n)|$1  if (web_contents) {\n    g_last_android_extension_action_tab_id = ExtensionTabUtil::GetTabId(web_contents);\n  }\n|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::GetActionIcon\(\n    JNIEnv\* env,\n    int action_index\) \{\n  ui::ImageModel icon_model =\n      menu_model_->GetActionIcon\(action_index, kActionIconSize\);\n  return ConvertToJavaBitmap\(icon_model\);\n\}|ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::GetActionIcon(\n    JNIEnv* env,\n    int action_index,\n    content::WebContents* web_contents) {\n  if (web_contents) {\n    const auto\& action_models = menu_model_->action_models();\n    CHECK_GE(action_index, 0);\n    CHECK_LT(static_cast<size_t>(action_index), action_models.size());\n    return ConvertToJavaBitmap(\n        action_models[action_index]->GetIcon(web_contents, kActionIconSize));\n  }\n\n  ui::ImageModel icon_model =\n      menu_model_->GetActionIcon(action_index, kActionIconSize);\n  return ConvertToJavaBitmap(icon_model);\n}|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::GetMenuEntry\(\n    JNIEnv\* env,\n    int action_index\) \{|ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::GetMenuEntry(\n    JNIEnv* env,\n    int action_index,\n    content::WebContents* web_contents) {|' "$MENU_DELEGATE_CC"
 grep -q 'action_model->GetActionTitle(web_contents)' "$MENU_DELEGATE_CC" || \
@@ -718,16 +742,17 @@ echo "Applied hotfixes to $SRC_DIR"
 if [ -f "$TABS_API_CC" ]; then
     grep -q 'build/build_config.h' "$TABS_API_CC" || \
         sed -i '/#include "base\/values.h"/a\#include "build/build_config.h"' "$TABS_API_CC"
+    grep -q 'extensions_menu_delegate_android.h' "$TABS_API_CC" || \
+        sed -i '/#include "build\/build_config.h"/a\#if BUILDFLAG(IS_ANDROID)\
+#include "chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h"\
+#endif' "$TABS_API_CC"
     python3 - "$TABS_API_CC" <<'PYCODE'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-if "helium_android_incognito_direct_query" not in text:
-    old = """  Profile* profile = Profile::FromBrowserContext(browser_context());
-"""
-    new = """#if BUILDFLAG(IS_ANDROID)
+old = """#if BUILDFLAG(IS_ANDROID)
   const bool helium_android_incognito_direct_query =
       query_info_.active && *query_info_.active &&
       ((query_info_.last_focused_window && *query_info_.last_focused_window) ||
@@ -762,9 +787,73 @@ if "helium_android_incognito_direct_query" not in text:
 
   Profile* profile = Profile::FromBrowserContext(browser_context());
 """
-    if old not in text:
-        raise SystemExit(f"pattern not found in {path}")
+new = """#if BUILDFLAG(IS_ANDROID)
+  const bool helium_android_current_tab_query =
+      query_info_.active && *query_info_.active &&
+      ((query_info_.last_focused_window && *query_info_.last_focused_window) ||
+       (query_info_.current_window && *query_info_.current_window) ||
+       window_id == extension_misc::kCurrentWindowId) &&
+      !query_info_.url && index < 0 && window_type.empty();
+  if (helium_android_current_tab_query) {
+    int action_tab_id = GetLastAndroidExtensionActionTabId();
+    if (action_tab_id >= 0) {
+      WindowController* action_window = nullptr;
+      content::WebContents* action_contents = nullptr;
+      int action_index = -1;
+      std::string action_error;
+      if (tabs_internal::GetTabById(
+              action_tab_id, browser_context(),
+              /*include_incognito=*/true, &action_window, &action_contents,
+              &action_index, &action_error) &&
+          action_contents) {
+        BrowserWindowInterface* action_browser =
+            action_window ? action_window->GetBrowserWindowInterface()
+                          : nullptr;
+        TabListInterface* action_tab_list =
+            action_browser ? TabListInterface::From(action_browser) : nullptr;
+        base::ListValue direct_result;
+        ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+            ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+        direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                                 action_contents, dont_scrub, extension(),
+                                 action_tab_list, action_index)
+                                 .ToValue());
+        return RespondNow(WithArguments(std::move(direct_result)));
+      }
+    }
+
+    for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
+      TabListInterface* tab_list = TabListInterface::From(browser);
+      if (!tab_list) {
+        continue;
+      }
+      ::tabs::TabInterface* tab = tab_list->GetActiveTab();
+      content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+      if (!contents || !contents->GetBrowserContext()->IsOffTheRecord()) {
+        continue;
+      }
+      base::ListValue direct_result;
+      ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+          ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+      direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                               contents, dont_scrub, extension(), tab_list,
+                               tab_list->GetActiveIndex())
+                               .ToValue());
+      return RespondNow(WithArguments(std::move(direct_result)));
+    }
+  }
+#endif
+
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+"""
+if old in text:
     text = text.replace(old, new, 1)
+elif "helium_android_current_tab_query" not in text:
+    anchor = """  Profile* profile = Profile::FromBrowserContext(browser_context());
+"""
+    if anchor not in text:
+        raise SystemExit(f"pattern not found in {path}")
+    text = text.replace(anchor, new, 1)
 path.write_text(text)
 PYCODE
 fi
