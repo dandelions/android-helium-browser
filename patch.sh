@@ -506,6 +506,28 @@ perl -0pi -e 's|List<ExtensionsMenuTypes\.MenuEntryState> getMenuEntries\(\n    
 perl -0pi -e 's|ExtensionsMenuTypes\.MenuEntryState getMenuEntry\(\n                long nativeExtensionsMenuDelegateAndroid, int actionIndex\);|ExtensionsMenuTypes.MenuEntryState getMenuEntry(\n                long nativeExtensionsMenuDelegateAndroid,\n                int actionIndex,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);|' "$BRIDGE"
 
 grep -q 'org.chromium.build.annotations.Nullable' "$MENU_MEDIATOR" || sed -i '/import org.chromium.build.annotations.NullMarked;/a\import org.chromium.build.annotations.Nullable;' "$MENU_MEDIATOR"
+# dedupe duplicate getCurrentWebContents methods from older hotfix runs
+python3 - "$MENU_MEDIATOR" <<'PYCODE'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+pattern = re.compile(
+    r"\n    private @Nullable WebContents getCurrentWebContents\(\) \{\n"
+    r"(?:        .*\n)+?"
+    r"    \}\n",
+    re.MULTILINE,
+)
+matches = list(pattern.finditer(text))
+if len(matches) > 1:
+    keep = matches[-1].group(0)
+    first_start = matches[0].start()
+    first_end = matches[-1].end()
+    text = text[:first_start] + keep + text[first_end:]
+path.write_text(text)
+PYCODE
 grep -q 'org.chromium.chrome.browser.tabmodel.TabModel;' "$MENU_MEDIATOR" || sed -i '/import org.chromium.chrome.browser.tabmodel.TabModelSelector;/a\import org.chromium.chrome.browser.tabmodel.TabModel;' "$MENU_MEDIATOR"
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
