@@ -1234,3 +1234,59 @@ marker_pos = text.find(marker)
 text = text[:marker_pos] + helper + text[marker_pos:]
 path.write_text(text)
 PYCODE
+
+# final rename/normalize: remove old helpers and use a unique Helium helper name
+python3 - "$MENU_MEDIATOR" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+for name in ("getCurrentWebContents", "getHeliumCurrentWebContents"):
+    needle = f"private @Nullable WebContents {name}() {{"
+    while True:
+        pos = text.find(needle)
+        if pos < 0:
+            break
+        start = text.rfind("\n", 0, pos)
+        start = 0 if start < 0 else start
+        brace = text.find("{", pos)
+        depth = 0
+        end = None
+        for idx in range(brace, len(text)):
+            if text[idx] == "{":
+                depth += 1
+            elif text[idx] == "}":
+                depth -= 1
+                if depth <= 0:
+                    end = idx + 1
+                    while end < len(text) and text[end] in " \t\r\n":
+                        end += 1
+                    break
+        if end is None:
+            break
+        text = text[:start].rstrip() + "\n\n" + text[end:]
+text = text.replace("getCurrentWebContents()", "getHeliumCurrentWebContents()")
+helper = "\n".join([
+    "    private @Nullable WebContents getHeliumCurrentWebContents() {",
+    "        Tab currentTab = null;",
+    "        if (mTabModelSelector != null) {",
+    "            TabModel incognitoModel = mTabModelSelector.getModel(true);",
+    "            Tab incognitoTab = incognitoModel.getCurrentTabSupplier().get();",
+    "            if (incognitoTab != null && incognitoTab.getWebContents() != null) {",
+    "                currentTab = incognitoTab;",
+    "            }",
+    "            if (currentTab == null) currentTab = mTabModelSelector.getCurrentTab();",
+    "        }",
+    "        if (currentTab == null) currentTab = mCurrentTabSupplier.get();",
+    "        return currentTab != null ? currentTab.getWebContents() : null;",
+    "    }",
+    "",
+    "",
+])
+marker = "    private @ExtensionsMenuProperties.Page int getCurrentPage()"
+if marker not in text:
+    raise SystemExit("getCurrentPage marker not found")
+text = text.replace(marker, helper + marker, 1)
+path.write_text(text)
+PYCODE
