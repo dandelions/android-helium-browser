@@ -574,16 +574,31 @@ perl -0pi -e 's|ExtensionsMenuTypes\.MenuEntryState getMenuEntry\(\n            
 
 grep -q 'org.chromium.build.annotations.Nullable' "$MENU_MEDIATOR" || \
     sed -i '/import org.chromium.build.annotations.NullMarked;/a\import org.chromium.build.annotations.Nullable;' "$MENU_MEDIATOR"
+grep -q 'org.chromium.chrome.browser.tabmodel.TabModel;' "$MENU_MEDIATOR" || sed -i '/import org.chromium.chrome.browser.tabmodel.TabModelSelector;/a\import org.chromium.chrome.browser.tabmodel.TabModel;' "$MENU_MEDIATOR"
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || \
     sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab currentTab = mTabModelSelector != null ? mTabModelSelector.getCurrentTab() : null;\
+        Tab currentTab = null;\
+        if (mTabModelSelector != null) {\
+            TabModel incognitoModel = mTabModelSelector.getModel(true);\
+            Tab incognitoTab = incognitoModel.getCurrentTabSupplier().get();\
+            if (incognitoTab != null\
+                    && (mTabModelSelector.isOffTheRecordModelSelected()\
+                            || mTabModelSelector.isIncognitoBrandedModelSelected()\
+                            || incognitoModel.isActiveModel()\
+                            || incognitoTab.isUserInteractable()\
+                            || incognitoTab.isActivated())) {\
+                currentTab = incognitoTab;\
+            }\
+            if (currentTab == null) currentTab = mTabModelSelector.getCurrentTab();\
+        }\
         if (currentTab == null) currentTab = mCurrentTabSupplier.get();\
         return currentTab != null ? currentTab.getWebContents() : null;\
     }\
 \
 ' "$MENU_MEDIATOR"
 perl -0pi -e 's|private \@Nullable WebContents getCurrentWebContents\(\) \{\n        Tab currentTab = mCurrentTabSupplier\.get\(\);\n        return currentTab != null \? currentTab\.getWebContents\(\) : null;\n    \}|private @Nullable WebContents getCurrentWebContents() {\n        Tab currentTab = mTabModelSelector != null ? mTabModelSelector.getCurrentTab() : null;\n        if (currentTab == null) currentTab = mCurrentTabSupplier.get();\n        return currentTab != null ? currentTab.getWebContents() : null;\n    }|' "$MENU_MEDIATOR"
+perl -0pi -e 's|private @Nullable WebContents getCurrentWebContents\(\) {\n        Tab currentTab = mTabModelSelector != null \? mTabModelSelector\.getCurrentTab\(\) : null;\n        if \(currentTab == null\) currentTab = mCurrentTabSupplier\.get\(\);\n        return currentTab != null \? currentTab\.getWebContents\(\) : null;\n    }|private @Nullable WebContents getCurrentWebContents() {\n        Tab currentTab = null;\n        if (mTabModelSelector != null) {\n            TabModel incognitoModel = mTabModelSelector.getModel(true);\n            Tab incognitoTab = incognitoModel.getCurrentTabSupplier().get();\n            if (incognitoTab != null\n                    \&\& (mTabModelSelector.isOffTheRecordModelSelected()\n                            || mTabModelSelector.isIncognitoBrandedModelSelected()\n                            || incognitoModel.isActiveModel()\n                            || incognitoTab.isUserInteractable()\n                            || incognitoTab.isActivated())) {\n                currentTab = incognitoTab;\n            }\n            if (currentTab == null) currentTab = mTabModelSelector.getCurrentTab();\n        }\n        if (currentTab == null) currentTab = mCurrentTabSupplier.get();\n        return currentTab != null ? currentTab.getWebContents() : null;\n    }|' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getMenuEntry(actionIndex)|mMenuBridge.getMenuEntry(actionIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getMenuEntry(newIndex)|mMenuBridge.getMenuEntry(newIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getActionIcon(actionIndex)|mMenuBridge.getActionIcon(actionIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
