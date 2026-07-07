@@ -28,6 +28,9 @@ ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
 MENU_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
 MENU_VIEW_MODEL=chrome/browser/ui/extensions/extensions_menu_view_model.cc
+TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
+EXTENSION_TAB_UTIL_CC=chrome/browser/extensions/extension_tab_util.cc
+EXTENSION_TAB_UTIL_H=chrome/browser/extensions/extension_tab_util.h
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
 EXTENSION_PREFS=extensions/browser/extension_prefs.cc
@@ -681,3 +684,161 @@ sed -i 's|mContainer.findViewById(R.id.extensions_menu_button).setVisibility(isM
 perl -0pi -e 's|        mContainer\.findViewById\(R\.id\.extensions_menu_button\)\.setVisibility\(visibility\);|        View menuButton = mContainer.findViewById(R.id.extensions_menu_button);\n        if (menuButton != null) {\n            menuButton.setVisibility(visibility);\n        }|' "$TOOLBAR"
 
 echo "Applied hotfixes to $SRC_DIR"
+
+# crbug.com/helium: make Android extension popup tabs APIs resolve the visible tab.
+# Proxy extensions call chrome.tabs.query({active: true, lastFocusedWindow: true})
+# from their popup. Android menu popups are not normal browser windows, so the
+# generic current/last-focused window lookup can resolve the wrong profile/window.
+# Keep the tab that opened the popup as the Android popup tab and prefer that
+# window for popup-scoped tabs APIs.
+if [ -f "$EXTENSION_TAB_UTIL_H" ] && [ -f "$EXTENSION_TAB_UTIL_CC" ] && [ -f "$TABS_API_CC" ]; then
+    grep -q 'build/build_config.h' "$EXTENSION_TAB_UTIL_H" || \
+        sed -i '/#include "base\/values.h"/a\#include "build/build_config.h"' "$EXTENSION_TAB_UTIL_H"
+    grep -q 'SetAndroidExtensionPopupWebContents' "$EXTENSION_TAB_UTIL_H" || \
+        sed -i '/static int GetWindowIdOfTab/a\
+#if BUILDFLAG(IS_ANDROID)\
+  static void SetAndroidExtensionPopupWebContents(\
+      content::WebContents* web_contents);\
+  static content::WebContents* GetAndroidExtensionPopupWebContents(\
+      content::BrowserContext* browser_context,\
+      bool include_incognito);\
+#endif\
+' "$EXTENSION_TAB_UTIL_H"
+    grep -q 'g_android_extension_popup_tab_id' "$EXTENSION_TAB_UTIL_CC" || \
+        sed -i '/bool g_disable_tab_list_editing_for_testing = false;/a\
+#if BUILDFLAG(IS_ANDROID)\
+int g_android_extension_popup_tab_id = -1;\
+#endif\
+' "$EXTENSION_TAB_UTIL_CC"
+    grep -q 'GetAndroidExtensionPopupWebContents' "$EXTENSION_TAB_UTIL_CC" || \
+        sed -i '/int ExtensionTabUtil::GetWindowIdOfTab/i\
+#if BUILDFLAG(IS_ANDROID)\
+void ExtensionTabUtil::SetAndroidExtensionPopupWebContents(\
+    content::WebContents* web_contents) {\
+  g_android_extension_popup_tab_id = web_contents ? GetTabId(web_contents) : -1;\
+}\
+\
+content::WebContents* ExtensionTabUtil::GetAndroidExtensionPopupWebContents(\
+    content::BrowserContext* browser_context,\
+    bool include_incognito) {\
+  if (g_android_extension_popup_tab_id < 0) {\
+    return nullptr;\
+  }\
+  content::WebContents* web_contents = nullptr;\
+  if (!GetTabById(g_android_extension_popup_tab_id, browser_context,\
+                  include_incognito, &web_contents)) {\
+    return nullptr;\
+  }\
+  return web_contents;\
+}\
+#endif\
+' "$EXTENSION_TAB_UTIL_CC"
+fi
+if [ -f "$MENU_DELEGATE_CC" ]; then
+    grep -q 'chrome/browser/extensions/extension_tab_util.h' "$MENU_DELEGATE_CC" || \
+        sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$MENU_DELEGATE_CC"
+    perl -0pi -e 's|(void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents\* web_contents\) \{\n)(?!#if BUILDFLAG\(IS_ANDROID\)\n  ExtensionTabUtil::SetAndroidExtensionPopupWebContents)|$1#if BUILDFLAG(IS_ANDROID)\n  ExtensionTabUtil::SetAndroidExtensionPopupWebContents(web_contents);\n#endif\n|s' "$MENU_DELEGATE_CC"
+fi
+if [ -f "$TABS_API_CC" ]; then
+    python3 - "$TABS_API_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+def replace_once(old, new, marker):
+    global text
+    if marker in text:
+        return
+    if old not in text:
+        raise SystemExit(f"pattern not found while patching {path}: {marker}")
+    text = text.replace(old, new, 1)
+
+replace_once(
+"""  if (tab_id != -1) {
+    // We assume this call leaves web_contents unchanged if it is unsuccessful.
+    tabs_internal::GetTabById(tab_id, function->browser_context(),
+                              function->include_incognito_information(),
+                              /*window_out=*/nullptr, &web_contents,
+                              /*index_out=*/nullptr, error);
+  } else {
+""",
+"""  if (tab_id != -1) {
+    // We assume this call leaves web_contents unchanged if it is unsuccessful.
+    tabs_internal::GetTabById(tab_id, function->browser_context(),
+                              function->include_incognito_information(),
+                              /*window_out=*/nullptr, &web_contents,
+                              /*index_out=*/nullptr, error);
+  } else {
+#if BUILDFLAG(IS_ANDROID)
+    web_contents = ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
+        function->browser_context(), function->include_incognito_information());
+    if (web_contents) {
+      return web_contents;
+    }
+#endif
+""",
+    "function->browser_context(), function->include_incognito_information())",
+)
+replace_once(
+"""  if (caller_contents && ExtensionTabUtil::GetTabId(caller_contents) >= 0) {
+    return RespondNow(ArgumentList(
+        tabs::Get::Results::Create(tabs_internal::CreateTabObjectHelper(
+            caller_contents, extension(), source_context_type(), nullptr,
+            -1))));
+  }
+""",
+"""  if (caller_contents && ExtensionTabUtil::GetTabId(caller_contents) >= 0) {
+    return RespondNow(ArgumentList(
+        tabs::Get::Results::Create(tabs_internal::CreateTabObjectHelper(
+            caller_contents, extension(), source_context_type(), nullptr,
+            -1))));
+  }
+#if BUILDFLAG(IS_ANDROID)
+  caller_contents = ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
+      browser_context(), include_incognito_information());
+  if (caller_contents && ExtensionTabUtil::GetTabId(caller_contents) >= 0) {
+    return RespondNow(ArgumentList(
+        tabs::Get::Results::Create(tabs_internal::CreateTabObjectHelper(
+            caller_contents, extension(), source_context_type(), nullptr,
+            -1))));
+  }
+#endif
+""",
+    "caller_contents = ExtensionTabUtil::GetAndroidExtensionPopupWebContents",
+)
+replace_once(
+"""  if (current_window_controller) {
+    current_browser = current_window_controller->GetBrowserWindowInterface();
+    // Note: current_browser may still be null.
+  }
+""",
+"""  if (current_window_controller) {
+    current_browser = current_window_controller->GetBrowserWindowInterface();
+    // Note: current_browser may still be null.
+  }
+#if BUILDFLAG(IS_ANDROID)
+  content::WebContents* android_popup_web_contents =
+      ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
+          browser_context(), include_incognito_information());
+  BrowserWindowInterface* android_popup_browser =
+      android_popup_web_contents
+          ? browser_window_util::GetBrowserForTabContents(
+                *android_popup_web_contents)
+          : nullptr;
+  if (android_popup_browser &&
+      (window_id == extension_misc::kCurrentWindowId ||
+       (query_info_.current_window && *query_info_.current_window) ||
+       (query_info_.last_focused_window &&
+        *query_info_.last_focused_window))) {
+    current_browser = android_popup_browser;
+    last_active_browser = android_popup_browser;
+  }
+#endif
+""",
+    "android_popup_web_contents",
+)
+path.write_text(text)
+PYCODE
+fi
