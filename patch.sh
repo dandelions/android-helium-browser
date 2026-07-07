@@ -535,7 +535,7 @@ path.write_text(text)
 PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTab();\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
         if (incognitoTab != null\
                 && (mTabModelSelector.isOffTheRecordModelSelected()\
                         || incognitoTab.isUserInteractable()\
@@ -642,7 +642,7 @@ path.write_text(text)
 PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$ACTION_LIST_MEDIATOR" || sed -i '/private void updateActionPropertiesForAll(WebContents webContents) {/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTab();\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
         if (incognitoTab != null\
                 && (mTabModelSelector.isOffTheRecordModelSelected()\
                         || incognitoTab.isUserInteractable()\
