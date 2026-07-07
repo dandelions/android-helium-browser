@@ -1197,3 +1197,40 @@ if marker not in text:
 text = text.replace(marker, helper + marker, 1)
 path.write_text(text)
 PYCODE
+
+# absolute normalize: replace everything before getCurrentPage with one helper
+python3 - "$MENU_MEDIATOR" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "    private @Nullable WebContents getCurrentWebContents()"
+marker = "    private @ExtensionsMenuProperties.Page int getCurrentPage()"
+marker_pos = text.find(marker)
+if marker_pos < 0:
+    raise SystemExit("getCurrentPage marker not found")
+start = text.find(needle)
+if start >= 0 and start < marker_pos:
+    text = text[:start].rstrip() + "\n\n" + text[marker_pos:]
+helper = "\n".join([
+    "    private @Nullable WebContents getCurrentWebContents() {",
+    "        Tab currentTab = null;",
+    "        if (mTabModelSelector != null) {",
+    "            TabModel incognitoModel = mTabModelSelector.getModel(true);",
+    "            Tab incognitoTab = incognitoModel.getCurrentTabSupplier().get();",
+    "            if (incognitoTab != null && incognitoTab.getWebContents() != null) {",
+    "                currentTab = incognitoTab;",
+    "            }",
+    "            if (currentTab == null) currentTab = mTabModelSelector.getCurrentTab();",
+    "        }",
+    "        if (currentTab == null) currentTab = mCurrentTabSupplier.get();",
+    "        return currentTab != null ? currentTab.getWebContents() : null;",
+    "    }",
+    "",
+    "",
+])
+marker_pos = text.find(marker)
+text = text[:marker_pos] + helper + text[marker_pos:]
+path.write_text(text)
+PYCODE
