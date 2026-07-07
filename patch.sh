@@ -508,11 +508,13 @@ perl -0pi -e 's|ExtensionsMenuTypes\.MenuEntryState getMenuEntry\(\n            
 grep -q 'org.chromium.build.annotations.Nullable' "$MENU_MEDIATOR" || sed -i '/import org.chromium.build.annotations.NullMarked;/a\import org.chromium.build.annotations.Nullable;' "$MENU_MEDIATOR"
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab currentTab = mCurrentTabSupplier.get();\
+        Tab currentTab = mTabModelSelector != null ? mTabModelSelector.getCurrentTab() : null;\
+        if (currentTab == null) currentTab = mCurrentTabSupplier.get();\
         return currentTab != null ? currentTab.getWebContents() : null;\
     }\
 \
 ' "$MENU_MEDIATOR"
+perl -0pi -e 's|private \@Nullable WebContents getCurrentWebContents\(\) \{\n        Tab currentTab = mCurrentTabSupplier\.get\(\);\n        return currentTab != null \? currentTab\.getWebContents\(\) : null;\n    \}|private @Nullable WebContents getCurrentWebContents() {\n        Tab currentTab = mTabModelSelector != null ? mTabModelSelector.getCurrentTab() : null;\n        if (currentTab == null) currentTab = mCurrentTabSupplier.get();\n        return currentTab != null ? currentTab.getWebContents() : null;\n    }|' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getMenuEntry(actionIndex)|mMenuBridge.getMenuEntry(actionIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getMenuEntry(newIndex)|mMenuBridge.getMenuEntry(newIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
 sed -i 's|mMenuBridge.getActionIcon(actionIndex)|mMenuBridge.getActionIcon(actionIndex, getCurrentWebContents())|g' "$MENU_MEDIATOR"
