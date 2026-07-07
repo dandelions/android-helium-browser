@@ -53,26 +53,50 @@ set_keys() {
 }
 
 sign_apk() {
-    export apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)
+    local apksigner
+    local zipalign
+    local aligned_apk
+
+    apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)
+    zipalign=$(find "$ANDROID_HOME/build-tools" -name zipalign | sort | tail -n 1)
+    if [ -z "$apksigner" ] || [ -z "$zipalign" ]; then
+        echo "Missing Android build-tools apksigner or zipalign." >&2
+        exit 1
+    fi
+
+    aligned_apk="$(mktemp --suffix=.apk)"
+    "$zipalign" -f -p 4 "$1" "$aligned_apk"
+
     source "$SCRIPT_DIR/keys/local.properties"
     if [ -n "${storeType:-}" ]; then
         "$apksigner" sign --verbose \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
             --ks "$SCRIPT_DIR/keys/test.jks" \
             --ks-type "$storeType" \
             --ks-pass "pass:$storePassword" \
             --key-pass "pass:$keyPassword" \
             --ks-key-alias "$keyAlias" \
             --out "$2" \
-            "$1" || exit 1
+            "$aligned_apk" || exit 1
     else
         "$apksigner" sign --verbose \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
             --ks "$SCRIPT_DIR/keys/test.jks" \
             --ks-pass "pass:$storePassword" \
             --key-pass "pass:$keyPassword" \
             --ks-key-alias "$keyAlias" \
             --out "$2" \
-            "$1" || exit 1
+            "$aligned_apk" || exit 1
     fi
+
+    "$apksigner" verify --verbose "$2" || exit 1
+    rm -f "$aligned_apk"
 }
 
 sign_aab() {
