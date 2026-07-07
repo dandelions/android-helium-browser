@@ -748,17 +748,28 @@ export PATCHED=1
 # crbug.com/helium: Android extension popup should see active incognito tab.
 if [ -f "$TABS_API_CC" ]; then
     grep -q 'build/build_config.h' "$TABS_API_CC" || \
-        sed -i '/#include "base\/values.h"/a\#include "build/build_config.h"' "$TABS_API_CC"
-    grep -q 'extensions_menu_delegate_android.h' "$TABS_API_CC" || \
-        sed -i '/#include "build\/build_config.h"/a\#if BUILDFLAG(IS_ANDROID)\
-#include "chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h"\
-#endif' "$TABS_API_CC"
+        sed -i '/#include "chrome\/browser\/extensions\/api\/tabs\/tabs_api.h"/a\#include "build/build_config.h"' "$TABS_API_CC"
     python3 - "$TABS_API_CC" <<'PYCODE'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
+text = text.replace(
+    '#if BUILDFLAG(IS_ANDROID)\n'
+    '#include "chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h"\n'
+    '#endif\n',
+    '')
+forward_decl = """#if BUILDFLAG(IS_ANDROID)
+int GetLastAndroidExtensionActionTabId();
+#endif
+
+"""
+namespace_anchor = "namespace extensions {\n\n"
+if "int GetLastAndroidExtensionActionTabId();" not in text:
+    if namespace_anchor not in text:
+        raise SystemExit(f"namespace pattern not found in {path}")
+    text = text.replace(namespace_anchor, namespace_anchor + forward_decl, 1)
 old = """#if BUILDFLAG(IS_ANDROID)
   const bool helium_android_incognito_direct_query =
       query_info_.active && *query_info_.active &&
