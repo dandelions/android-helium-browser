@@ -506,38 +506,6 @@ perl -0pi -e 's|List<ExtensionsMenuTypes\.MenuEntryState> getMenuEntries\(\n    
 perl -0pi -e 's|ExtensionsMenuTypes\.MenuEntryState getMenuEntry\(\n                long nativeExtensionsMenuDelegateAndroid, int actionIndex\);|ExtensionsMenuTypes.MenuEntryState getMenuEntry(\n                long nativeExtensionsMenuDelegateAndroid,\n                int actionIndex,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);|' "$BRIDGE"
 
 grep -q 'org.chromium.build.annotations.Nullable' "$MENU_MEDIATOR" || sed -i '/import org.chromium.build.annotations.NullMarked;/a\import org.chromium.build.annotations.Nullable;' "$MENU_MEDIATOR"
-# Remove stale duplicate helper methods left by older hotfix attempts.
-python3 - "$MENU_MEDIATOR" <<'PYCODE'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text()
-needle = "private @Nullable WebContents getCurrentWebContents() {"
-while True:
-    pos = text.find(needle)
-    if pos < 0:
-        break
-    start = text.rfind("\n", 0, pos)
-    start = 0 if start < 0 else start
-    brace = text.find("{", pos)
-    depth = 0
-    end = None
-    for idx in range(brace, len(text)):
-        if text[idx] == "{":
-            depth += 1
-        elif text[idx] == "}":
-            depth -= 1
-            if depth <= 0:
-                end = idx + 1
-                while end < len(text) and text[end] in " \t\r\n":
-                    end += 1
-                break
-    if end is None:
-        break
-    text = text[:start].rstrip() + "\n\n" + text[end:]
-path.write_text(text)
-PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
         Tab currentTab = mTabModelSelector != null ? mTabModelSelector.getCurrentTab() : null;\
