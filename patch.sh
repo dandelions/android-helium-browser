@@ -114,7 +114,7 @@ std::string ExtensionsMenuDelegateAndroid::GetOptionsPageUrl(\
   return options_url.is_valid() ? options_url.spec() : std::string();\
 }\
 ' chrome/browser/ui/android/extensions/extensions_menu_delegate_android.cc
-sed -i '/#include "chrome\/browser\/extensions\/extension_view_host_factory.h"/a\#include "build/build_config.h"\n#include "chrome/browser/extensions/extension_tab_util.h"\n#include "chrome/browser/profiles/profile.h"\n#include "chrome/browser/tab_list/tab_list_interface.h"\n#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"\n#include "components/tabs/public/tab_interface.h"\n#include "extensions/browser/extension_registry.h"' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
+sed -i '/#include "chrome\/browser\/extensions\/extension_view_host_factory.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"\n#include "chrome/browser/profiles/profile.h"\n#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"\n#include "extensions/browser/extension_registry.h"' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(\) \{\n  const extensions::Extension\* extension =\n      extensions::ExtensionRegistry::Get\(browser_->GetProfile\(\)\)\n          ->enabled_extensions\(\)\n          \.GetByID\(action_id_\);\n  if \(extension &&\n      extensions::ExtensionTabUtil::OpenOptionsPage\(extension, browser_\)\) \{\n    return;\n  \}\n\n  toolbar_android_->ShowContextMenu\(action_id_\);\n\}|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback() {\n  toolbar_android_->ShowContextMenu(action_id_);\n}|' chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 
 # Menu action popups should be anchored to the clicked menu row, not by
@@ -276,8 +276,6 @@ grep -q 'const base::android::JavaRef<jobject>& java_menu_object)' "$ACTION_DELE
 perl -0pi -e 's|bool ExtensionActionDelegateAndroid::IsShowingPopup\(\) const \{\n  return toolbar_android_->HasActivePopup\(\);\n\}|bool ExtensionActionDelegateAndroid::IsShowingPopup() const {\n  if (!java_menu_object_.is_null()) {\n    return extensions::Java_ExtensionsMenuBridge_hasActivePopup(\n        base::android::AttachCurrentThread(), java_menu_object_);\n  }\n  return toolbar_android_->HasActivePopup();\n}|' "$ACTION_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionActionDelegateAndroid::HidePopup\(\) \{\n  toolbar_android_->HideActivePopup\(\);\n\}|void ExtensionActionDelegateAndroid::HidePopup() {\n  if (!java_menu_object_.is_null()) {\n    extensions::Java_ExtensionsMenuBridge_hideActivePopup(\n        base::android::AttachCurrentThread(), java_menu_object_);\n    return;\n  }\n  toolbar_android_->HideActivePopup();\n}|' "$ACTION_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionActionDelegateAndroid::TriggerPopup\(\n    std::unique_ptr<extensions::ExtensionViewHost> host,\n    PopupShowAction show_action,\n    bool by_user,\n    ShowPopupCallback callback\) \{\n  toolbar_android_->TriggerPopup\(action_id_, std::move\(host\)\);\n\}|void ExtensionActionDelegateAndroid::TriggerPopup(\n    std::unique_ptr<extensions::ExtensionViewHost> host,\n    PopupShowAction show_action,\n    bool by_user,\n    ShowPopupCallback callback) {\n  if (!java_menu_object_.is_null()) {\n    extensions::Java_ExtensionsMenuBridge_triggerPopup(\n        base::android::AttachCurrentThread(), java_menu_object_, action_id_,\n        reinterpret_cast<int64_t>(host.release()));\n    return;\n  }\n  toolbar_android_->TriggerPopup(action_id_, std::move(host));\n}|' "$ACTION_DELEGATE_CC"
-grep -q 'SetAndroidExtensionPopupWebContents(active_web_contents)' "$ACTION_DELEGATE_CC" || \
-    perl -0pi -e 's|(void ExtensionActionDelegateAndroid::TriggerPopup\(\n    std::unique_ptr<extensions::ExtensionViewHost> host,\n    PopupShowAction show_action,\n    bool by_user,\n    ShowPopupCallback callback\) \{\n)|$1#if BUILDFLAG(IS_ANDROID)\n  content::WebContents* active_web_contents = nullptr;\n  if (browser_) {\n    TabListInterface* tab_list = TabListInterface::From(browser_);\n    tabs::TabInterface* active_tab =\n        tab_list ? tab_list->GetActiveTab() : nullptr;\n    active_web_contents = active_tab ? active_tab->GetContents() : nullptr;\n  }\n  extensions::ExtensionTabUtil::SetAndroidExtensionPopupWebContents(\n      active_web_contents);\n#endif\n|s' "$ACTION_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(\) \{\n  toolbar_android_->ShowContextMenu\(action_id_\);\n\}|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback() {\n  if (!java_menu_object_.is_null()) {\n    extensions::Java_ExtensionsMenuBridge_showContextMenu(\n        base::android::AttachCurrentThread(), java_menu_object_, action_id_);\n    return;\n  }\n  toolbar_android_->ShowContextMenu(action_id_);\n}|' "$ACTION_DELEGATE_CC"
 perl -0pi -e 's~\bJava_ExtensionsMenuBridge_(hasActivePopup|hideActivePopup|triggerPopup|showContextMenu)\b~extensions::Java_ExtensionsMenuBridge_$1~g; s~extensions::extensions::Java_ExtensionsMenuBridge_~extensions::Java_ExtensionsMenuBridge_~g' "$ACTION_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionActionDelegateAndroid::CloseExtensionsMenuIfOpen\(\) \{\n  toolbar_android_->CloseExtensionsMenuIfOpen\(\);\n\}|void ExtensionActionDelegateAndroid::CloseExtensionsMenuIfOpen() {\n  if (!java_menu_object_.is_null()) {\n    return;\n  }\n  toolbar_android_->CloseExtensionsMenuIfOpen();\n}|' "$ACTION_DELEGATE_CC"
@@ -878,8 +876,13 @@ replace_once(
   content::WebContents* android_popup_direct_web_contents =
       ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
           browser_context(), /*include_incognito=*/true);
+  BrowserWindowInterface* android_popup_direct_browser =
+      android_popup_direct_web_contents
+          ? browser_window_util::GetBrowserForTabContents(
+                *android_popup_direct_web_contents)
+          : nullptr;
   const bool helium_android_popup_direct_query =
-      android_popup_direct_web_contents && query_info_.active &&
+      android_popup_direct_browser && query_info_.active &&
       *query_info_.active &&
       ((query_info_.last_focused_window &&
         *query_info_.last_focused_window) ||
@@ -890,7 +893,8 @@ replace_once(
     base::ListValue direct_result;
     direct_result.Append(tabs_internal::CreateTabObjectHelper(
                              android_popup_direct_web_contents, extension(),
-                             source_context_type(), nullptr, -1)
+                             source_context_type(),
+                             android_popup_direct_browser, -1)
                              .ToValue());
     return RespondNow(WithArguments(std::move(direct_result)));
   }
