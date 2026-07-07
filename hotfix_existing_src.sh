@@ -598,6 +598,13 @@ PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || \
     sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTab();\
+        if (incognitoTab != null\
+                && (mTabModelSelector.isOffTheRecordModelSelected()\
+                        || incognitoTab.isUserInteractable()\
+                        || incognitoTab.isActivated())) {\
+            return incognitoTab.getWebContents();\
+        }\
         Tab currentTab = mTabModelSelector.getCurrentTab();\
         if (currentTab == null) {\
             currentTab = mCurrentTabSupplier.get();\
@@ -679,9 +686,47 @@ sed -i 's|GetMenuEntry(env, i)|GetMenuEntry(env, i, web_contents)|g' "$MENU_DELE
 grep -q 'public void setActiveWebContents' "$TOOLBAR_BRIDGE" || \
     perl -0pi -e 's|(\n    public void executeUserAction\(String actionId, \@InvocationSource int source\) \{\n)|\n    public void setActiveWebContents(\@Nullable WebContents webContents) {\n        assert mNativeExtensionsToolbarAndroid != 0;\n        if (mProfile.shutdownStarted()) {\n            return;\n        }\n        ExtensionsToolbarBridgeJni.get()\n                .setActiveWebContents(mNativeExtensionsToolbarAndroid, webContents);\n    }\n$1|' "$TOOLBAR_BRIDGE"
 perl -0pi -e 'if (!/void setActiveWebContents\(\n\s+long nativeExtensionsToolbarAndroid,/) { s|(\n        void executeUserAction\(\n                long nativeExtensionsToolbarAndroid,)|\n        void setActiveWebContents(\n                long nativeExtensionsToolbarAndroid,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);\n$1| }' "$TOOLBAR_BRIDGE"
+python3 - "$ACTION_LIST_MEDIATOR" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "private @Nullable WebContents getCurrentWebContents() {"
+while True:
+    pos = text.find(needle)
+    if pos < 0:
+        break
+    start = text.rfind("\n", 0, pos)
+    start = 0 if start < 0 else start
+    brace = text.find("{", pos)
+    depth = 0
+    end = None
+    for idx in range(brace, len(text)):
+        if text[idx] == "{":
+            depth += 1
+        elif text[idx] == "}":
+            depth -= 1
+            if depth <= 0:
+                end = idx + 1
+                while end < len(text) and text[end] in " \t\r\n":
+                    end += 1
+                break
+    if end is None:
+        break
+    text = text[:start].rstrip() + "\n\n" + text[end:]
+path.write_text(text)
+PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$ACTION_LIST_MEDIATOR" || \
     sed -i '/private void updateActionPropertiesForAll(WebContents webContents) {/i\
     private @Nullable WebContents getCurrentWebContents() {\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTab();\
+        if (incognitoTab != null\
+                && (mTabModelSelector.isOffTheRecordModelSelected()\
+                        || incognitoTab.isUserInteractable()\
+                        || incognitoTab.isActivated())) {\
+            return incognitoTab.getWebContents();\
+        }\
         Tab currentTab = mTabModelSelector.getCurrentTab();\
         if (currentTab == null) {\
             currentTab = mCurrentTabSupplier.get();\
