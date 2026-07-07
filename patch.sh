@@ -758,24 +758,6 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-text = text.replace(
-    "ExtensionTabUtil::GetAndroidExtensionPopupWebContents(\n"
-    "        function->browser_context(), function->include_incognito_information());",
-    "ExtensionTabUtil::GetAndroidExtensionPopupWebContents(\n"
-    "        function->browser_context(), /*include_incognito=*/true);",
-)
-text = text.replace(
-    "ExtensionTabUtil::GetAndroidExtensionPopupWebContents(\n"
-    "      browser_context(), include_incognito_information());",
-    "ExtensionTabUtil::GetAndroidExtensionPopupWebContents(\n"
-    "      browser_context(), /*include_incognito=*/true);",
-)
-text = text.replace(
-    "ExtensionTabUtil::GetAndroidExtensionPopupWebContents(\n"
-    "          browser_context(), include_incognito_information());",
-    "ExtensionTabUtil::GetAndroidExtensionPopupWebContents(\n"
-    "          browser_context(), /*include_incognito=*/true);",
-)
 
 def replace_once(old, new, marker):
     global text
@@ -803,13 +785,13 @@ replace_once(
   } else {
 #if BUILDFLAG(IS_ANDROID)
     web_contents = ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
-        function->browser_context(), /*include_incognito=*/true);
+        function->browser_context(), function->include_incognito_information());
     if (web_contents) {
       return web_contents;
     }
 #endif
 """,
-    "function->browser_context(), /*include_incognito=*/true)",
+    "function->browser_context(), function->include_incognito_information())",
 )
 replace_once(
 """  if (caller_contents && ExtensionTabUtil::GetTabId(caller_contents) >= 0) {
@@ -827,7 +809,7 @@ replace_once(
   }
 #if BUILDFLAG(IS_ANDROID)
   caller_contents = ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
-      browser_context(), /*include_incognito=*/true);
+      browser_context(), include_incognito_information());
   if (caller_contents && ExtensionTabUtil::GetTabId(caller_contents) >= 0) {
     return RespondNow(ArgumentList(
         tabs::Get::Results::Create(tabs_internal::CreateTabObjectHelper(
@@ -851,7 +833,7 @@ replace_once(
 #if BUILDFLAG(IS_ANDROID)
   content::WebContents* android_popup_web_contents =
       ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
-          browser_context(), /*include_incognito=*/true);
+          browser_context(), include_incognito_information());
   BrowserWindowInterface* android_popup_browser =
       android_popup_web_contents
           ? browser_window_util::GetBrowserForTabContents(
@@ -868,25 +850,6 @@ replace_once(
 #endif
 """,
     "android_popup_web_contents",
-)
-replace_once(
-"""  if (!include_incognito_information() && profile != candidate_profile) {
-    return false;
-  }
-""",
-"""#if BUILDFLAG(IS_ANDROID)
-  if (!include_incognito_information() && profile != candidate_profile &&
-      candidate_browser != current_browser &&
-      candidate_browser != last_active_browser) {
-    return false;
-  }
-#else
-  if (!include_incognito_information() && profile != candidate_profile) {
-    return false;
-  }
-#endif
-""",
-    "candidate_browser != current_browser",
 )
 path.write_text(text)
 PYCODE
