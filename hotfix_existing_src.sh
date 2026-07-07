@@ -577,29 +577,24 @@ grep -q 'org.chromium.build.annotations.Nullable' "$MENU_MEDIATOR" || \
 # dedupe duplicate getCurrentWebContents methods from older hotfix runs
 python3 - "$MENU_MEDIATOR" <<'PYCODE'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
-lines = path.read_text().splitlines(keepends=True)
-starts = [
-    i for i, line in enumerate(lines)
-    if line.strip() == "private @Nullable WebContents getCurrentWebContents() {"
-]
-if len(starts) > 1:
-    ranges = []
-    for start in starts:
-        depth = 0
-        end = None
-        for idx in range(start, len(lines)):
-            depth += lines[idx].count("{") - lines[idx].count("}")
-            if idx > start and depth <= 0:
-                end = idx + 1
-                break
-        if end is not None:
-            ranges.append((start, end))
-    for start, end in reversed(ranges[:-1]):
-        del lines[start:end]
-    path.write_text("".join(lines))
+text = path.read_text()
+pattern = re.compile(
+    r"\n    private @Nullable WebContents getCurrentWebContents\(\) \{\n"
+    r"(?:        .*\n)+?"
+    r"    \}\n",
+    re.MULTILINE,
+)
+matches = list(pattern.finditer(text))
+if len(matches) > 1:
+    keep = matches[-1].group(0)
+    first_start = matches[0].start()
+    first_end = matches[-1].end()
+    text = text[:first_start] + keep + text[first_end:]
+path.write_text(text)
 PYCODE
 grep -q 'org.chromium.chrome.browser.tabmodel.TabModel;' "$MENU_MEDIATOR" || sed -i '/import org.chromium.chrome.browser.tabmodel.TabModelSelector;/a\import org.chromium.chrome.browser.tabmodel.TabModel;' "$MENU_MEDIATOR"
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || \
