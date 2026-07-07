@@ -812,9 +812,59 @@ text = text.replace(
       !query_info_.url && index < 0 && window_type.empty();
   if (helium_android_popup_direct_query) {
     base::ListValue direct_result;
+    ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+        ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+    direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                             android_popup_direct_web_contents, dont_scrub,
+                             extension(), nullptr, -1)
+                             .ToValue());
+    return RespondNow(WithArguments(std::move(direct_result)));
+  }
+#endif
+""",
+)
+text = text.replace(
+"""#if BUILDFLAG(IS_ANDROID)
+  content::WebContents* android_popup_direct_web_contents =
+      ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
+          browser_context(), /*include_incognito=*/true);
+  const bool helium_android_popup_direct_query =
+      android_popup_direct_web_contents && query_info_.active &&
+      *query_info_.active &&
+      ((query_info_.last_focused_window &&
+        *query_info_.last_focused_window) ||
+       (query_info_.current_window && *query_info_.current_window) ||
+       window_id == extension_misc::kCurrentWindowId) &&
+      !query_info_.url && index < 0 && window_type.empty();
+  if (helium_android_popup_direct_query) {
+    base::ListValue direct_result;
     direct_result.Append(tabs_internal::CreateTabObjectHelper(
                              android_popup_direct_web_contents, extension(),
                              source_context_type(), nullptr, -1)
+                             .ToValue());
+    return RespondNow(WithArguments(std::move(direct_result)));
+  }
+#endif
+""",
+"""#if BUILDFLAG(IS_ANDROID)
+  content::WebContents* android_popup_direct_web_contents =
+      ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
+          browser_context(), /*include_incognito=*/true);
+  const bool helium_android_popup_direct_query =
+      android_popup_direct_web_contents && query_info_.active &&
+      *query_info_.active &&
+      ((query_info_.last_focused_window &&
+        *query_info_.last_focused_window) ||
+       (query_info_.current_window && *query_info_.current_window) ||
+       window_id == extension_misc::kCurrentWindowId) &&
+      !query_info_.url && index < 0 && window_type.empty();
+  if (helium_android_popup_direct_query) {
+    base::ListValue direct_result;
+    ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+        ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+    direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                             android_popup_direct_web_contents, dont_scrub,
+                             extension(), nullptr, -1)
                              .ToValue());
     return RespondNow(WithArguments(std::move(direct_result)));
   }
@@ -949,9 +999,11 @@ replace_once(
       !query_info_.url && index < 0 && window_type.empty();
   if (helium_android_popup_direct_query) {
     base::ListValue direct_result;
-    direct_result.Append(tabs_internal::CreateTabObjectHelper(
-                             android_popup_direct_web_contents, extension(),
-                             source_context_type(), nullptr, -1)
+    ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+        ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+    direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                             android_popup_direct_web_contents, dont_scrub,
+                             extension(), nullptr, -1)
                              .ToValue());
     return RespondNow(WithArguments(std::move(direct_result)));
   }
