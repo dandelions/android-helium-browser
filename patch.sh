@@ -870,41 +870,6 @@ replace_once(
     "android_popup_web_contents",
 )
 replace_once(
-"""  Profile* profile = Profile::FromBrowserContext(browser_context());
-""",
-"""#if BUILDFLAG(IS_ANDROID)
-  content::WebContents* android_popup_direct_web_contents =
-      ExtensionTabUtil::GetAndroidExtensionPopupWebContents(
-          browser_context(), /*include_incognito=*/true);
-  BrowserWindowInterface* android_popup_direct_browser =
-      android_popup_direct_web_contents
-          ? browser_window_util::GetBrowserForTabContents(
-                *android_popup_direct_web_contents)
-          : nullptr;
-  const bool helium_android_popup_direct_query =
-      android_popup_direct_browser && query_info_.active &&
-      *query_info_.active &&
-      ((query_info_.last_focused_window &&
-        *query_info_.last_focused_window) ||
-       (query_info_.current_window && *query_info_.current_window) ||
-       window_id == extension_misc::kCurrentWindowId) &&
-      !query_info_.url && index < 0 && window_type.empty();
-  if (helium_android_popup_direct_query) {
-    base::ListValue direct_result;
-    direct_result.Append(tabs_internal::CreateTabObjectHelper(
-                             android_popup_direct_web_contents, extension(),
-                             source_context_type(),
-                             android_popup_direct_browser, -1)
-                             .ToValue());
-    return RespondNow(WithArguments(std::move(direct_result)));
-  }
-#endif
-
-  Profile* profile = Profile::FromBrowserContext(browser_context());
-""",
-    "helium_android_popup_direct_query",
-)
-replace_once(
 """  if (!include_incognito_information() && profile != candidate_profile) {
     return false;
   }
