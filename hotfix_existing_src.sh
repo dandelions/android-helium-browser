@@ -31,6 +31,7 @@ ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
 MENU_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
 MENU_VIEW_MODEL=chrome/browser/ui/extensions/extensions_menu_view_model.cc
+TABS_EVENT_ROUTER_CC=chrome/browser/extensions/api/tabs/tabs_event_router.cc
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
 EXTENSION_PREFS=extensions/browser/extension_prefs.cc
@@ -53,7 +54,7 @@ WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
 TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -830,6 +831,73 @@ sed -i 's|mContainer.findViewById(R.id.extensions_menu_button).setVisibility(isM
 perl -0pi -e 's|        mContainer\.findViewById\(R\.id\.extensions_menu_button\)\.setVisibility\(visibility\);|        View menuButton = mContainer.findViewById(R.id.extensions_menu_button);\n        if (menuButton != null) {\n            menuButton.setVisibility(visibility);\n        }|' "$TOOLBAR"
 
 echo "Applied hotfixes to $SRC_DIR"
+
+# crbug.com/helium: Android incognito tab events must reach spanning extension
+# backgrounds so action icons/titles (SwitchyOmega status) update for OTR tabs.
+if [ -f "$TABS_EVENT_ROUTER_CC" ]; then
+    grep -q 'build/build_config.h' "$TABS_EVENT_ROUTER_CC" || \
+        sed -i '/#include "chrome\/browser\/extensions\/api\/tabs\/tabs_event_router.h"/a\#include "build/build_config.h"' "$TABS_EVENT_ROUTER_CC"
+    python3 - "$TABS_EVENT_ROUTER_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "HeliumAndroidIncognitoTabEvents"
+if marker not in text:
+    text = text.replace(
+        """  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+
+  auto event = std::make_unique<Event>(
+""",
+        """  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+#if BUILDFLAG(IS_ANDROID)
+  // HeliumAndroidIncognitoTabEvents: spanning extension backgrounds live on the
+  // original profile, so route OTR tab events through the original profile.
+  if (profile->IsOffTheRecord()) {
+    profile = profile->GetOriginalProfile();
+  }
+#endif
+
+  auto event = std::make_unique<Event>(
+""",
+        1,
+    )
+    text = text.replace(
+        """  Profile* const profile =
+      Profile::FromBrowserContext(contents->GetBrowserContext());
+  auto event = std::make_unique<Event>(events::TABS_ON_CREATED,
+""",
+        """  Profile* profile =
+      Profile::FromBrowserContext(contents->GetBrowserContext());
+#if BUILDFLAG(IS_ANDROID)
+  if (profile->IsOffTheRecord()) {
+    profile = profile->GetOriginalProfile();
+  }
+#endif
+  auto event = std::make_unique<Event>(events::TABS_ON_CREATED,
+""",
+        1,
+    )
+    text = text.replace(
+        """  EventRouter* event_router = EventRouter::Get(profile);
+  if (!profile_->IsSameOrParent(profile) || !event_router) {
+""",
+        """#if BUILDFLAG(IS_ANDROID)
+  if (profile->IsOffTheRecord()) {
+    profile = profile->GetOriginalProfile();
+  }
+#endif
+  EventRouter* event_router = EventRouter::Get(profile);
+  if (!profile_->IsSameOrParent(profile) || !event_router) {
+""",
+        1,
+    )
+    if marker not in text:
+        raise SystemExit(f"tabs event router patterns not found in {path}")
+path.write_text(text)
+PYCODE
+fi
 
 # crbug.com/helium: Android extension popup should see active incognito tab.
 if [ -f "$TABS_API_CC" ]; then

@@ -132,6 +132,7 @@ ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegat
 ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate_android.h
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
 TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
+TABS_EVENT_ROUTER_CC=chrome/browser/extensions/api/tabs/tabs_event_router.cc
 perl -0pi -e 's|if \(hasPoppedOutAction\(\)\) \{\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        \} else \{\n            mCanShowPoppedOutAction = false;\n            return 0;\n        \}|if (hasPoppedOutAction() && itemWidth <= availableWidth) {\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        } else {\n            mCanShowPoppedOutAction = false;\n            return 0;\n        }|' "$ACTION_LIST_MEDIATOR"
 perl -0pi -e 's|if \(findIndexForId\(actionId\) == -1\) \{\n            mPoppedOutActionId = actionId;\n            mCanShowPoppedOutAction = true;\n            reconcileActionItems\(\);\n        \}|if (findIndexForId(actionId) == -1) {\n            mPoppedOutActionId = actionId;\n        }|' "$ACTION_LIST_MEDIATOR"
 grep -q 'org.chromium.chrome.browser.tabmodel.TabModelSelector' "$MENU_COORDINATOR" || sed -i '/import org.chromium.chrome.browser.tabmodel.TabCreator;/a\import org.chromium.chrome.browser.tabmodel.TabModelSelector;' "$MENU_COORDINATOR"
@@ -829,6 +830,73 @@ sed -i 's/|| mSupportedProfileType == SupportedProfileType.REGULAR) {/|| mSuppor
 sed -i 's/|| mSupportedProfileType == SupportedProfileType.OFF_THE_RECORD) {/|| mSupportedProfileType == SupportedProfileType.OFF_THE_RECORD || mSupportedProfileType == SupportedProfileType.MIXED) {/' chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 
 export PATCHED=1
+
+# crbug.com/helium: Android incognito tab events must reach spanning extension
+# backgrounds so action icons/titles (SwitchyOmega status) update for OTR tabs.
+if [ -f "$TABS_EVENT_ROUTER_CC" ]; then
+    grep -q 'build/build_config.h' "$TABS_EVENT_ROUTER_CC" || \
+        sed -i '/#include "chrome\/browser\/extensions\/api\/tabs\/tabs_event_router.h"/a\#include "build/build_config.h"' "$TABS_EVENT_ROUTER_CC"
+    python3 - "$TABS_EVENT_ROUTER_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "HeliumAndroidIncognitoTabEvents"
+if marker not in text:
+    text = text.replace(
+        """  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+
+  auto event = std::make_unique<Event>(
+""",
+        """  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+#if BUILDFLAG(IS_ANDROID)
+  // HeliumAndroidIncognitoTabEvents: spanning extension backgrounds live on the
+  // original profile, so route OTR tab events through the original profile.
+  if (profile->IsOffTheRecord()) {
+    profile = profile->GetOriginalProfile();
+  }
+#endif
+
+  auto event = std::make_unique<Event>(
+""",
+        1,
+    )
+    text = text.replace(
+        """  Profile* const profile =
+      Profile::FromBrowserContext(contents->GetBrowserContext());
+  auto event = std::make_unique<Event>(events::TABS_ON_CREATED,
+""",
+        """  Profile* profile =
+      Profile::FromBrowserContext(contents->GetBrowserContext());
+#if BUILDFLAG(IS_ANDROID)
+  if (profile->IsOffTheRecord()) {
+    profile = profile->GetOriginalProfile();
+  }
+#endif
+  auto event = std::make_unique<Event>(events::TABS_ON_CREATED,
+""",
+        1,
+    )
+    text = text.replace(
+        """  EventRouter* event_router = EventRouter::Get(profile);
+  if (!profile_->IsSameOrParent(profile) || !event_router) {
+""",
+        """#if BUILDFLAG(IS_ANDROID)
+  if (profile->IsOffTheRecord()) {
+    profile = profile->GetOriginalProfile();
+  }
+#endif
+  EventRouter* event_router = EventRouter::Get(profile);
+  if (!profile_->IsSameOrParent(profile) || !event_router) {
+""",
+        1,
+    )
+    if marker not in text:
+        raise SystemExit(f"tabs event router patterns not found in {path}")
+path.write_text(text)
+PYCODE
+fi
 
 # crbug.com/helium: Android extension popup should see active incognito tab.
 if [ -f "$TABS_API_CC" ]; then
