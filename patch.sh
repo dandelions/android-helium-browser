@@ -834,6 +834,13 @@ export PATCHED=1
 if [ -f "$TABS_API_CC" ]; then
     grep -q 'build/build_config.h' "$TABS_API_CC" || \
         sed -i '/#include "chrome\/browser\/extensions\/api\/tabs\/tabs_api.h"/a\#include "build/build_config.h"' "$TABS_API_CC"
+    grep -q 'chrome/browser/android/tab_android.h' "$TABS_API_CC" || \
+        sed -i '/#include "build\/build_config.h"/a\
+#if BUILDFLAG(IS_ANDROID)\
+#include "chrome/browser/android/tab_android.h"\
+#endif' "$TABS_API_CC"
+    grep -q 'content/public/browser/visibility.h' "$TABS_API_CC" || \
+        sed -i '/#include "content\/public\/browser\/navigation_handle.h"/a\#include "content/public/browser/visibility.h"' "$TABS_API_CC"
     python3 - "$TABS_API_CC" <<'PYCODE'
 from pathlib import Path
 import sys
@@ -957,6 +964,190 @@ elif "helium_android_current_tab_query" not in text:
     if anchor not in text:
         raise SystemExit(f"pattern not found in {path}")
     text = text.replace(anchor, new, 1)
+action_first = """    int action_tab_id = GetLastAndroidExtensionActionTabId();
+    if (action_tab_id >= 0) {
+      WindowController* action_window = nullptr;
+      content::WebContents* action_contents = nullptr;
+      int action_index = -1;
+      std::string action_error;
+      if (tabs_internal::GetTabById(
+              action_tab_id, browser_context(),
+              /*include_incognito=*/true, &action_window, &action_contents,
+              &action_index, &action_error) &&
+          action_contents) {
+        BrowserWindowInterface* action_browser =
+            action_window ? action_window->GetBrowserWindowInterface()
+                          : nullptr;
+        TabListInterface* action_tab_list =
+            action_browser ? TabListInterface::From(action_browser) : nullptr;
+        base::ListValue direct_result;
+        ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+            ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+        direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                                 action_contents, dont_scrub, extension(),
+                                 action_tab_list, action_index)
+                                 .ToValue());
+        return RespondNow(WithArguments(std::move(direct_result)));
+      }
+    }
+
+    for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
+      TabListInterface* tab_list = TabListInterface::From(browser);
+      if (!tab_list) {
+        continue;
+      }
+      ::tabs::TabInterface* tab = tab_list->GetActiveTab();
+      content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+      if (!contents || !contents->GetBrowserContext()->IsOffTheRecord()) {
+        continue;
+      }
+      base::ListValue direct_result;
+      ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+          ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+      direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                               contents, dont_scrub, extension(), tab_list,
+                               tab_list->GetActiveIndex())
+                               .ToValue());
+      return RespondNow(WithArguments(std::move(direct_result)));
+    }
+"""
+otr_first = """    for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
+      TabListInterface* tab_list = TabListInterface::From(browser);
+      if (!tab_list) {
+        continue;
+      }
+      ::tabs::TabInterface* tab = tab_list->GetActiveTab();
+      content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+      if (!contents || !contents->GetBrowserContext()->IsOffTheRecord()) {
+        continue;
+      }
+      base::ListValue direct_result;
+      ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+          ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+      direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                               contents, dont_scrub, extension(), tab_list,
+                               tab_list->GetActiveIndex())
+                               .ToValue());
+      return RespondNow(WithArguments(std::move(direct_result)));
+    }
+
+    int action_tab_id = GetLastAndroidExtensionActionTabId();
+    if (action_tab_id >= 0) {
+      WindowController* action_window = nullptr;
+      content::WebContents* action_contents = nullptr;
+      int action_index = -1;
+      std::string action_error;
+      if (tabs_internal::GetTabById(
+              action_tab_id, browser_context(),
+              /*include_incognito=*/true, &action_window, &action_contents,
+              &action_index, &action_error) &&
+          action_contents) {
+        BrowserWindowInterface* action_browser =
+            action_window ? action_window->GetBrowserWindowInterface()
+                          : nullptr;
+        TabListInterface* action_tab_list =
+            action_browser ? TabListInterface::From(action_browser) : nullptr;
+        base::ListValue direct_result;
+        ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+            ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+        direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                                 action_contents, dont_scrub, extension(),
+                                 action_tab_list, action_index)
+                                 .ToValue());
+        return RespondNow(WithArguments(std::move(direct_result)));
+      }
+    }
+"""
+text = text.replace(action_first, otr_first, 1)
+text = text.replace(
+    "if (!contents || !contents->GetBrowserContext()->IsOffTheRecord()) {",
+    "if (!contents || !contents->GetBrowserContext()->IsOffTheRecord() ||\\n"
+    "          contents->GetVisibility() != content::Visibility::VISIBLE) {")
+robust_if = """  if (helium_android_current_tab_query) {
+    for (int pass = 0; pass < 2; ++pass) {
+      for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
+        TabListInterface* tab_list = TabListInterface::From(browser);
+        if (!tab_list) {
+          continue;
+        }
+        for (int i = 0; i < tab_list->GetTabCount(); ++i) {
+          ::tabs::TabInterface* tab = tab_list->GetTab(i);
+          if (!tab) {
+            continue;
+          }
+          content::WebContents* contents = tab->GetContents();
+          if (!contents || !contents->GetBrowserContext()->IsOffTheRecord()) {
+            continue;
+          }
+          TabAndroid* android_tab = TabAndroid::FromWebContents(contents);
+          bool is_current_tab =
+              android_tab ? (android_tab->IsUserInteractable() ||
+                             android_tab->IsActivated())
+                          : tab->IsActivated();
+          if (pass == 0 && !is_current_tab) {
+            continue;
+          }
+          if (pass == 1 && !is_current_tab &&
+              contents->GetVisibility() != content::Visibility::VISIBLE) {
+            continue;
+          }
+          base::ListValue direct_result;
+          ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+              ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+          direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                                   contents, dont_scrub, extension(), tab_list,
+                                   i)
+                                   .ToValue());
+          return RespondNow(WithArguments(std::move(direct_result)));
+        }
+      }
+    }
+
+    int action_tab_id = GetLastAndroidExtensionActionTabId();
+    if (action_tab_id >= 0) {
+      WindowController* action_window = nullptr;
+      content::WebContents* action_contents = nullptr;
+      int action_index = -1;
+      std::string action_error;
+      if (tabs_internal::GetTabById(
+              action_tab_id, browser_context(),
+              /*include_incognito=*/true, &action_window, &action_contents,
+              &action_index, &action_error) &&
+          action_contents) {
+        BrowserWindowInterface* action_browser =
+            action_window ? action_window->GetBrowserWindowInterface()
+                          : nullptr;
+        TabListInterface* action_tab_list =
+            action_browser ? TabListInterface::From(action_browser) : nullptr;
+        base::ListValue direct_result;
+        ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+            ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+        direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                                 action_contents, dont_scrub, extension(),
+                                 action_tab_list, action_index)
+                                 .ToValue());
+        return RespondNow(WithArguments(std::move(direct_result)));
+      }
+    }
+  }
+"""
+if_marker = "  if (helium_android_current_tab_query) {\n"
+start = text.find(if_marker)
+if start >= 0:
+    brace = text.find("{", start)
+    depth = 0
+    end = None
+    for idx in range(brace, len(text)):
+        if text[idx] == "{":
+            depth += 1
+        elif text[idx] == "}":
+            depth -= 1
+            if depth == 0:
+                end = idx + 1
+                break
+    if end is None:
+        raise SystemExit(f"query block end not found in {path}")
+    text = text[:start] + robust_if + text[end:]
 path.write_text(text)
 PYCODE
 fi
