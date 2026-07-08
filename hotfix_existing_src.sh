@@ -1131,6 +1131,81 @@ robust_if = """  if (helium_android_current_tab_query) {
       }
     }
   }
+
+  const bool helium_android_unfiltered_tab_query =
+      !query_info_.active && !query_info_.current_window &&
+      !query_info_.last_focused_window && !query_info_.highlighted &&
+      !query_info_.pinned && !query_info_.audible && !query_info_.muted &&
+      !query_info_.discarded && !query_info_.auto_discardable &&
+      !query_info_.frozen && !query_info_.url && !query_info_.title &&
+      !query_info_.group_id.has_value() &&
+      !query_info_.split_view_id.has_value() && index < 0 &&
+      window_type.empty() && window_id == extension_misc::kUnknownWindowId;
+  if (helium_android_unfiltered_tab_query) {
+    base::ListValue direct_result;
+    std::vector<int> appended_tab_ids;
+    auto append_tab =
+        [&](content::WebContents* contents, TabListInterface* tab_list,
+            int tab_index) {
+          if (!contents) {
+            return;
+          }
+          Profile* profile = Profile::FromBrowserContext(browser_context());
+          Profile* candidate_profile =
+              Profile::FromBrowserContext(contents->GetBrowserContext());
+          if (!profile->IsSameOrParent(candidate_profile)) {
+            return;
+          }
+          if (!include_incognito_information() &&
+              profile != candidate_profile) {
+            return;
+          }
+          int tab_id = ExtensionTabUtil::GetTabId(contents);
+          for (int appended_tab_id : appended_tab_ids) {
+            if (appended_tab_id == tab_id) {
+              return;
+            }
+          }
+          appended_tab_ids.push_back(tab_id);
+          ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+              ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+          direct_result.Append(ExtensionTabUtil::CreateTabObject(
+                                   contents, dont_scrub, extension(), tab_list,
+                                   tab_index)
+                                   .ToValue());
+        };
+    for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
+      TabListInterface* tab_list = TabListInterface::From(browser);
+      if (!tab_list) {
+        continue;
+      }
+      for (int i = 0; i < tab_list->GetTabCount(); ++i) {
+        ::tabs::TabInterface* tab = tab_list->GetTab(i);
+        append_tab(tab ? tab->GetContents() : nullptr, tab_list, i);
+      }
+    }
+    int action_tab_id = GetLastAndroidExtensionActionTabId();
+    if (action_tab_id >= 0) {
+      WindowController* action_window = nullptr;
+      content::WebContents* action_contents = nullptr;
+      int action_index = -1;
+      std::string action_error;
+      if (tabs_internal::GetTabById(
+              action_tab_id, browser_context(),
+              /*include_incognito=*/true, &action_window, &action_contents,
+              &action_index, &action_error) &&
+          action_contents) {
+        BrowserWindowInterface* action_browser =
+            action_window ? action_window->GetBrowserWindowInterface()
+                          : nullptr;
+        append_tab(action_contents,
+                   action_browser ? TabListInterface::From(action_browser)
+                                  : nullptr,
+                   action_index);
+      }
+    }
+    return RespondNow(WithArguments(std::move(direct_result)));
+  }
 """
 if_marker = "  if (helium_android_current_tab_query) {\n"
 start = text.find(if_marker)
