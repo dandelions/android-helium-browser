@@ -1162,10 +1162,15 @@ robust_if = """  if (helium_android_current_tab_query) {
           base::ListValue direct_result;
           ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
               ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
-          direct_result.Append(ExtensionTabUtil::CreateTabObject(
-                                   contents, dont_scrub, extension(), tab_list,
-                                   i)
-                                   .ToValue());
+          base::DictValue tab_value =
+              ExtensionTabUtil::CreateTabObject(
+                  contents, dont_scrub, extension(), tab_list, i)
+                  .ToValue();
+          if (is_current_tab) {
+            tab_value.Set(tabs_constants::kActiveKey, true);
+            tab_value.Set(tabs_constants::kSelectedKey, true);
+          }
+          direct_result.Append(std::move(tab_value));
           return RespondNow(WithArguments(std::move(direct_result)));
         }
       }
@@ -1236,10 +1241,19 @@ robust_if = """  if (helium_android_current_tab_query) {
           appended_tab_ids.push_back(tab_id);
           ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
               ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
-          direct_result.Append(ExtensionTabUtil::CreateTabObject(
-                                   contents, dont_scrub, extension(), tab_list,
-                                   tab_index)
-                                   .ToValue());
+          base::DictValue tab_value =
+              ExtensionTabUtil::CreateTabObject(contents, dont_scrub,
+                                                extension(), tab_list,
+                                                tab_index)
+                  .ToValue();
+          TabAndroid* android_tab = TabAndroid::FromWebContents(contents);
+          if (android_tab &&
+              (android_tab->IsUserInteractable() ||
+               android_tab->IsActivated())) {
+            tab_value.Set(tabs_constants::kActiveKey, true);
+            tab_value.Set(tabs_constants::kSelectedKey, true);
+          }
+          direct_result.Append(std::move(tab_value));
         };
     for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
       TabListInterface* tab_list = TabListInterface::From(browser);
