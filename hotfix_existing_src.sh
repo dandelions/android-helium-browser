@@ -694,6 +694,99 @@ grep -q 'action_model->GetActionTitle(web_contents)' "$MENU_DELEGATE_CC" || \
 perl -0pi -e 's|std::u16string action_title = action_model->GetActionTitle\(web_contents\);\n    state\.action_button\.text = action_title\.empty\(\)\n                                   \? action_model->GetActionName\(\)\n                                   : action_title;|std::u16string action_title = action_model->GetActionTitle(web_contents);\n    if (!action_title.empty()) {\n      state.action_button.text = action_title;\n    }|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|ExtensionsMenuDelegateAndroid::GetMenuEntries\(JNIEnv\* env\) \{|ExtensionsMenuDelegateAndroid::GetMenuEntries(\n    JNIEnv* env,\n    content::WebContents* web_contents) {|' "$MENU_DELEGATE_CC"
 sed -i 's|GetMenuEntry(env, i)|GetMenuEntry(env, i, web_contents)|g' "$MENU_DELEGATE_CC"
+python3 - "$MENU_DELEGATE_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+def replace_function(text, name, replacement):
+    marker = f"ExtensionsMenuDelegateAndroid::{name}("
+    name_pos = text.find(marker)
+    if name_pos < 0:
+        raise SystemExit(f"{name} not found in {path}")
+    start = text.rfind("\n", 0, name_pos)
+    start = 0 if start < 0 else start + 1
+    brace = text.find("{", name_pos)
+    if brace < 0:
+        raise SystemExit(f"{name} body not found in {path}")
+    depth = 0
+    end = None
+    for idx in range(brace, len(text)):
+        if text[idx] == "{":
+            depth += 1
+        elif text[idx] == "}":
+            depth -= 1
+            if depth == 0:
+                end = idx + 1
+                break
+    if end is None:
+        raise SystemExit(f"{name} body end not found in {path}")
+    return text[:start] + replacement + text[end:]
+
+get_action_icon = """ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::GetActionIcon(
+    JNIEnv* env,
+    int action_index,
+    content::WebContents* web_contents) {
+  const auto& action_models = menu_model_->action_models();
+  CHECK_GE(action_index, 0);
+  CHECK_LT(static_cast<size_t>(action_index), action_models.size());
+  if (web_contents) {
+    return ConvertToJavaBitmap(
+        action_models[action_index]->GetIcon(web_contents, kActionIconSize));
+  }
+
+  ui::ImageModel icon_model =
+      menu_model_->GetActionIcon(action_index, kActionIconSize);
+  return ConvertToJavaBitmap(icon_model);
+}
+
+"""
+
+get_menu_entry = """ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::GetMenuEntry(
+    JNIEnv* env,
+    int action_index,
+    content::WebContents* web_contents) {
+  const auto& action_models = menu_model_->action_models();
+  CHECK_GE(action_index, 0);
+  CHECK_LT(static_cast<size_t>(action_index), action_models.size());
+
+  const auto& action_model = action_models[action_index];
+  extensions::ExtensionId id = action_model->GetId();
+  ExtensionsMenuViewModel::MenuEntryState state =
+      menu_model_->GetMenuEntryState(id, kActionIconSize);
+  if (web_contents) {
+    std::u16string action_title = action_model->GetActionTitle(web_contents);
+    if (!action_title.empty()) {
+      state.action_button.text = action_title;
+    }
+    state.action_button.accessible_name =
+        action_model->GetAccessibleName(web_contents);
+    state.action_button.tooltip_text = action_model->GetTooltip(web_contents);
+    state.action_button.status =
+        action_model->IsEnabled(web_contents)
+            ? ExtensionsMenuViewModel::ControlState::Status::kEnabled
+            : ExtensionsMenuViewModel::ControlState::Status::kDisabled;
+    state.action_button.icon =
+        action_model->GetIcon(web_contents, kActionIconSize);
+    state.origin = web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+  }
+
+  return Java_MenuEntryState_Constructor(
+      env, id, CreateJavaControlState(env, state.action_button),
+      CreateJavaControlState(env, state.context_menu_button),
+      CreateJavaControlState(env, state.site_access_toggle),
+      CreateJavaControlState(env, state.site_permissions_button),
+      state.is_enterprise, state.origin.Serialize());
+}
+
+"""
+
+text = replace_function(text, "GetActionIcon", get_action_icon)
+text = replace_function(text, "GetMenuEntry", get_menu_entry)
+path.write_text(text)
+PYCODE
 
 grep -q 'public void setActiveWebContents' "$TOOLBAR_BRIDGE" || \
     perl -0pi -e 's|(\n    public void executeUserAction\(String actionId, \@InvocationSource int source\) \{\n)|\n    public void setActiveWebContents(\@Nullable WebContents webContents) {\n        assert mNativeExtensionsToolbarAndroid != 0;\n        if (mProfile.shutdownStarted()) {\n            return;\n        }\n        ExtensionsToolbarBridgeJni.get()\n                .setActiveWebContents(mNativeExtensionsToolbarAndroid, webContents);\n    }\n$1|' "$TOOLBAR_BRIDGE"
