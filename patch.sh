@@ -1295,6 +1295,31 @@ robust_if = """  if (helium_android_current_tab_query) {
     return RespondNow(WithArguments(std::move(direct_result)));
   }
 """
+unfiltered_marker = "  const bool helium_android_unfiltered_tab_query =\n"
+while True:
+    unfiltered_start = text.find(unfiltered_marker)
+    if unfiltered_start < 0:
+        break
+    unfiltered_if = text.find("  if (helium_android_unfiltered_tab_query) {", unfiltered_start)
+    if unfiltered_if < 0:
+        raise SystemExit(f"unfiltered query if block not found in {path}")
+    brace = text.find("{", unfiltered_if)
+    depth = 0
+    unfiltered_end = None
+    for idx in range(brace, len(text)):
+        if text[idx] == "{":
+            depth += 1
+        elif text[idx] == "}":
+            depth -= 1
+            if depth == 0:
+                unfiltered_end = idx + 1
+                while unfiltered_end < len(text) and text[unfiltered_end] in " \t\r\n":
+                    unfiltered_end += 1
+                break
+    if unfiltered_end is None:
+        raise SystemExit(f"unfiltered query block end not found in {path}")
+    text = text[:unfiltered_start] + text[unfiltered_end:]
+
 if_marker = "  if (helium_android_current_tab_query) {\n"
 start = text.find(if_marker)
 if start >= 0:
