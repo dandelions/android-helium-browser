@@ -696,6 +696,13 @@ sed -i 's/if ((!is_android || enable_vr) && !is_ios) {/if ((!is_android || enabl
 # crbug.com/40831291: bottom address bar
 sed -i 's@(idealFitsBelow && spaceBelowAnchor >= spaceAboveAnchor) || !idealFitsAbove;@(idealFitsBelow == idealFitsAbove) ? (spaceBelowAnchor >= spaceAboveAnchor) : idealFitsBelow;@' ui/android/java/src/org/chromium/ui/widget/PopupSpecCalculator.java
 
+# crbug.com/helium: place the Hub/tab switcher toolbar at the bottom.
+HUB_LAYOUT=chrome/browser/hub/internal/android/res/layout/hub_layout.xml
+if [ -f "$HUB_LAYOUT" ]; then
+sed -i 's|android:layout_marginTop="@dimen/toolbar_height_no_shadow"|android:layout_marginBottom="@dimen/toolbar_height_no_shadow"|' "$HUB_LAYOUT"
+sed -i 's|<include layout="@layout/hub_toolbar_layout" />|<include layout="@layout/hub_toolbar_layout" android:layout_gravity="bottom" />|' "$HUB_LAYOUT"
+fi
+
 # crbug.com/404069963: ntp override
 sed -i 's/BASE_FEATURE(kChromeNativeUrlOverriding, base::FEATURE_DISABLED_BY_DEFAULT);/BASE_FEATURE(kChromeNativeUrlOverriding, base::FEATURE_ENABLED_BY_DEFAULT);/' chrome/browser/flags/android/chrome_feature_list.cc
 sed -i 's|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, BuildConfig.IS_DESKTOP_ANDROID)|newCachedFlag(CHROME_NATIVE_URL_OVERRIDING, true)|' chrome/browser/flags/android/java/src/org/chromium/chrome/browser/flags/ChromeFeatureList.java
