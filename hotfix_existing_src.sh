@@ -573,6 +573,7 @@ grep -q 'org.chromium.build.annotations.Nullable' "$MENU_MEDIATOR" || \
 python3 - "$MENU_MEDIATOR" <<'PYCODE'
 from pathlib import Path
 import sys
+import re
 
 path = Path(sys.argv[1])
 text = path.read_text()
@@ -918,6 +919,7 @@ if [ -f "$TABS_API_CC" ]; then
     python3 - "$TABS_API_CC" <<'PYCODE'
 from pathlib import Path
 import sys
+import re
 
 path = Path(sys.argv[1])
 text = path.read_text()
@@ -1294,14 +1296,18 @@ robust_if = """  if (helium_android_current_tab_query) {
     return RespondNow(WithArguments(std::move(direct_result)));
   }
 """
-unfiltered_marker = "  const bool helium_android_unfiltered_tab_query =\n"
 while True:
-    unfiltered_start = text.find(unfiltered_marker)
-    if unfiltered_start < 0:
+    unfiltered_match = re.search(
+        r"(?m)^[ \t]*const bool helium_android_unfiltered_tab_query =\n", text)
+    if not unfiltered_match:
         break
-    unfiltered_if = text.find("  if (helium_android_unfiltered_tab_query) {", unfiltered_start)
-    if unfiltered_if < 0:
+    unfiltered_start = unfiltered_match.start()
+    unfiltered_if_match = re.search(
+        r"(?m)^[ \t]*if \(helium_android_unfiltered_tab_query\) \{",
+        text[unfiltered_start:])
+    if not unfiltered_if_match:
         raise SystemExit(f"unfiltered query if block not found in {path}")
+    unfiltered_if = unfiltered_start + unfiltered_if_match.start()
     brace = text.find("{", unfiltered_if)
     depth = 0
     unfiltered_end = None
