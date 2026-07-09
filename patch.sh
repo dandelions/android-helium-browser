@@ -133,6 +133,8 @@ ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
 TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 TABS_EVENT_ROUTER_CC=chrome/browser/extensions/api/tabs/tabs_event_router.cc
+CHROME_EXTENSIONS_BROWSER_CLIENT=chrome/browser/extensions/chrome_extensions_browser_client.cc
+EXTENSION_TAB_UTIL_CC=chrome/browser/extensions/extension_tab_util.cc
 perl -0pi -e 's|if \(hasPoppedOutAction\(\)\) \{\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        \} else \{\n            mCanShowPoppedOutAction = false;\n            return 0;\n        \}|if (hasPoppedOutAction() && itemWidth <= availableWidth) {\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        } else {\n            mCanShowPoppedOutAction = false;\n            return 0;\n        }|' "$ACTION_LIST_MEDIATOR"
 perl -0pi -e 's|if \(findIndexForId\(actionId\) == -1\) \{\n            mPoppedOutActionId = actionId;\n            mCanShowPoppedOutAction = true;\n            reconcileActionItems\(\);\n        \}|if (findIndexForId(actionId) == -1) {\n            mPoppedOutActionId = actionId;\n        }|' "$ACTION_LIST_MEDIATOR"
 grep -q 'org.chromium.chrome.browser.tabmodel.TabModelSelector' "$MENU_COORDINATOR" || sed -i '/import org.chromium.chrome.browser.tabmodel.TabCreator;/a\import org.chromium.chrome.browser.tabmodel.TabModelSelector;' "$MENU_COORDINATOR"
@@ -775,6 +777,201 @@ void ExtensionsToolbarAndroid::SetActiveWebContents(\
 
 perl -0pi -e 's|bool ExtensionPrefs::IsIncognitoEnabled\(const ExtensionId& extension_id\) const \{\n  return ReadPrefAsBooleanAndReturn\(extension_id, kPrefIncognitoEnabled\);\n\}|bool ExtensionPrefs::IsIncognitoEnabled(const ExtensionId& extension_id) const {\n#if BUILDFLAG(IS_ANDROID)\n  return true;\n#else\n  return ReadPrefAsBooleanAndReturn(extension_id, kPrefIncognitoEnabled);\n#endif\n}|' extensions/browser/extension_prefs.cc
 perl -0pi -e 's|void ExtensionPrefs::SetIsIncognitoEnabled\(const ExtensionId& extension_id,\n                                           bool enabled\) \{\n  UpdateExtensionPref\(extension_id, kPrefIncognitoEnabled,\n                      base::Value\(enabled\)\);\n  extension_pref_value_map_->SetExtensionIncognitoState\(extension_id, enabled\);\n\}|void ExtensionPrefs::SetIsIncognitoEnabled(const ExtensionId& extension_id,\n                                           bool enabled) {\n#if BUILDFLAG(IS_ANDROID)\n  enabled = true;\n#endif\n  UpdateExtensionPref(extension_id, kPrefIncognitoEnabled,\n                      base::Value(enabled));\n  extension_pref_value_map_->SetExtensionIncognitoState(extension_id, enabled);\n}|' extensions/browser/extension_prefs.cc
+
+grep -q 'build/build_config.h' "$CHROME_EXTENSIONS_BROWSER_CLIENT" || sed -i '/#include "base\/containers\/contains.h"/a\#include "build/build_config.h"' "$CHROME_EXTENSIONS_BROWSER_CLIENT"
+grep -q 'chrome/browser/android/tab_android.h' "$CHROME_EXTENSIONS_BROWSER_CLIENT" || sed -i '/#include "build\/build_config.h"/a\
+#if BUILDFLAG(IS_ANDROID)\
+#include "chrome/browser/android/tab_android.h"\
+#endif' "$CHROME_EXTENSIONS_BROWSER_CLIENT"
+python3 - "$CHROME_EXTENSIONS_BROWSER_CLIENT" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "HeliumAndroidTabIdFallback"
+if marker not in text:
+    old = """void ChromeExtensionsBrowserClient::GetTabAndWindowIdForWebContents(
+    content::WebContents* web_contents,
+    int* tab_id,
+    int* window_id) {
+  sessions::SessionTabHelper* session_tab_helper =
+      sessions::SessionTabHelper::FromWebContents(web_contents);
+  if (session_tab_helper) {
+    *tab_id = session_tab_helper->session_id().id();
+    *window_id = session_tab_helper->window_id().id();
+  } else {
+    *tab_id = -1;
+    *window_id = -1;
+  }
+}
+"""
+    new = """void ChromeExtensionsBrowserClient::GetTabAndWindowIdForWebContents(
+    content::WebContents* web_contents,
+    int* tab_id,
+    int* window_id) {
+  sessions::SessionTabHelper* session_tab_helper =
+      sessions::SessionTabHelper::FromWebContents(web_contents);
+  if (session_tab_helper) {
+    *tab_id = session_tab_helper->session_id().id();
+    *window_id = session_tab_helper->window_id().id();
+  } else {
+    *tab_id = -1;
+    *window_id = -1;
+  }
+
+#if BUILDFLAG(IS_ANDROID)
+  // HeliumAndroidTabIdFallback: Android incognito WebContents may not have a
+  // SessionTabHelper when extension webRequest details are built.
+  if ((*tab_id == -1 || *window_id == -1) && web_contents) {
+    TabAndroid* tab = TabAndroid::FromWebContents(web_contents);
+    if (tab) {
+      if (*tab_id == -1) {
+        *tab_id = tab->GetAndroidId();
+      }
+      if (*window_id == -1 && tab->GetWindowId().is_valid()) {
+        *window_id = tab->GetWindowId().id();
+      }
+    }
+  }
+#endif
+}
+"""
+    if old not in text:
+        raise SystemExit(f"GetTabAndWindowIdForWebContents pattern not found in {path}")
+    text = text.replace(old, new, 1)
+path.write_text(text)
+PYCODE
+
+grep -q 'build/build_config.h' "$EXTENSION_TAB_UTIL_CC" || sed -i '/#include "base\/strings\/utf_string_conversions.h"/a\#include "build/build_config.h"' "$EXTENSION_TAB_UTIL_CC"
+grep -q 'chrome/browser/android/tab_android.h' "$EXTENSION_TAB_UTIL_CC" || sed -i '/#include "chrome\/browser\/app_mode\/app_mode_utils.h"/a\
+#if BUILDFLAG(IS_ANDROID)\
+#include "chrome/browser/android/tab_android.h"\
+#endif' "$EXTENSION_TAB_UTIL_CC"
+python3 - "$EXTENSION_TAB_UTIL_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+if "HeliumAndroidExtensionTabIdFallback" not in text:
+    old = """int GetTabIdForExtensions(WebContents& web_contents) {
+  BrowserWindowInterface* browser =
+      browser_window_util::GetBrowserForTabContents(web_contents);
+  if (browser && !ExtensionTabUtil::BrowserSupportsTabs(browser)) {
+    return -1;
+  }
+  return sessions::SessionTabHelper::IdForTab(&web_contents).id();
+}
+"""
+    new = """int GetTabIdForExtensions(WebContents& web_contents) {
+  BrowserWindowInterface* browser =
+      browser_window_util::GetBrowserForTabContents(web_contents);
+  if (browser && !ExtensionTabUtil::BrowserSupportsTabs(browser)) {
+    return -1;
+  }
+  int tab_id = sessions::SessionTabHelper::IdForTab(&web_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+  // HeliumAndroidExtensionTabIdFallback: keep Android incognito extension
+  // tabs/webRequest/action state keyed by a valid TabAndroid id.
+  if (tab_id == -1) {
+    TabAndroid* tab = TabAndroid::FromWebContents(&web_contents);
+    if (tab) {
+      tab_id = tab->GetAndroidId();
+    }
+  }
+#endif
+  return tab_id;
+}
+"""
+    if old not in text:
+        raise SystemExit(f"GetTabIdForExtensions pattern not found in {path}")
+    text = text.replace(old, new, 1)
+
+    old = """int ExtensionTabUtil::GetTabId(const WebContents* web_contents) {
+  return sessions::SessionTabHelper::IdForTab(web_contents).id();
+}
+"""
+    new = """int ExtensionTabUtil::GetTabId(const WebContents* web_contents) {
+  int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+  if (tab_id == -1) {
+    const TabAndroid* tab = TabAndroid::FromWebContents(web_contents);
+    if (tab) {
+      tab_id = tab->GetAndroidId();
+    }
+  }
+#endif
+  return tab_id;
+}
+"""
+    if old not in text:
+        raise SystemExit(f"GetTabId pattern not found in {path}")
+    text = text.replace(old, new, 1)
+
+    old = """int ExtensionTabUtil::GetWindowIdOfTab(const WebContents* web_contents) {
+  return sessions::SessionTabHelper::IdForWindowContainingTab(web_contents)
+      .id();
+}
+"""
+    new = """int ExtensionTabUtil::GetWindowIdOfTab(const WebContents* web_contents) {
+  int window_id =
+      sessions::SessionTabHelper::IdForWindowContainingTab(web_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+  if (window_id == -1) {
+    const TabAndroid* tab = TabAndroid::FromWebContents(web_contents);
+    if (tab && tab->GetWindowId().is_valid()) {
+      window_id = tab->GetWindowId().id();
+    }
+  }
+#endif
+  return window_id;
+}
+"""
+    if old not in text:
+        raise SystemExit(f"GetWindowIdOfTab pattern not found in {path}")
+    text = text.replace(old, new, 1)
+    text = text.replace(
+        """      if (sessions::SessionTabHelper::IdForTab(target_contents).id() ==
+          tab_id) {
+""",
+        """      int target_tab_id = sessions::SessionTabHelper::IdForTab(target_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+      if (target_tab_id == -1) {
+        const TabAndroid* target_tab =
+            TabAndroid::FromWebContents(target_contents);
+        if (target_tab) {
+          target_tab_id = target_tab->GetAndroidId();
+        }
+      }
+#endif
+      if (target_tab_id == tab_id) {
+""",
+        1,
+    )
+    text = text.replace(
+        """      if (sessions::SessionTabHelper::IdForTab(web_contents).id() != tab_id) {
+        return;
+      }
+""",
+        """      int prerender_tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
+#if BUILDFLAG(IS_ANDROID)
+      if (prerender_tab_id == -1) {
+        const TabAndroid* prerender_tab =
+            TabAndroid::FromWebContents(web_contents);
+        if (prerender_tab) {
+          prerender_tab_id = prerender_tab->GetAndroidId();
+        }
+      }
+#endif
+      if (prerender_tab_id != tab_id) {
+        return;
+      }
+""",
+        1,
+    )
+path.write_text(text)
+PYCODE
 
 # ext: priority
 sed -i 's|host_contents_->SetColorProviderSource(NoOpColorProviderSource::Get());|&\nhost_contents_->SetPrimaryPageImportance(content::ChildProcessImportance::IMPORTANT, content::ChildProcessImportance::NORMAL);|' extensions/browser/extension_host.cc
