@@ -537,6 +537,14 @@ path.write_text(text)
 PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
+        Tab suppliedTab = mCurrentTabSupplier.get();\
+        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
+            return suppliedTab.getWebContents();\
+        }\
+        Tab currentTab = mTabModelSelector.getCurrentTab();\
+        if (currentTab != null && currentTab.getWebContents() != null) {\
+            return currentTab.getWebContents();\
+        }\
         Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
         if (incognitoTab != null\
                 && (mTabModelSelector.isOffTheRecordModelSelected()\
@@ -544,11 +552,7 @@ grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR"
                         || incognitoTab.isActivated())) {\
             return incognitoTab.getWebContents();\
         }\
-        Tab currentTab = mTabModelSelector.getCurrentTab();\
-        if (currentTab == null) {\
-            currentTab = mCurrentTabSupplier.get();\
-        }\
-        return currentTab != null ? currentTab.getWebContents() : null;\
+        return incognitoTab != null ? incognitoTab.getWebContents() : null;\
     }\
 \
 ' "$MENU_MEDIATOR"
@@ -644,6 +648,14 @@ path.write_text(text)
 PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$ACTION_LIST_MEDIATOR" || sed -i '/private void updateActionPropertiesForAll(WebContents webContents) {/i\
     private @Nullable WebContents getCurrentWebContents() {\
+        Tab suppliedTab = mCurrentTabSupplier.get();\
+        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
+            return suppliedTab.getWebContents();\
+        }\
+        Tab currentTab = mTabModelSelector.getCurrentTab();\
+        if (currentTab != null && currentTab.getWebContents() != null) {\
+            return currentTab.getWebContents();\
+        }\
         Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
         if (incognitoTab != null\
                 && (mTabModelSelector.isOffTheRecordModelSelected()\
@@ -651,11 +663,7 @@ grep -q 'private @Nullable WebContents getCurrentWebContents()' "$ACTION_LIST_ME
                         || incognitoTab.isActivated())) {\
             return incognitoTab.getWebContents();\
         }\
-        Tab currentTab = mTabModelSelector.getCurrentTab();\
-        if (currentTab == null) {\
-            currentTab = mCurrentTabSupplier.get();\
-        }\
-        return currentTab != null ? currentTab.getWebContents() : null;\
+        return incognitoTab != null ? incognitoTab.getWebContents() : null;\
     }\
 \
 ' "$ACTION_LIST_MEDIATOR"
@@ -702,6 +710,7 @@ HUB_LAYOUT=chrome/browser/hub/internal/android/res/layout/hub_layout.xml
 if [ -f "$HUB_LAYOUT" ]; then
 sed -i 's|android:layout_marginTop="@dimen/toolbar_height_no_shadow"|android:layout_marginBottom="@dimen/toolbar_height_no_shadow"|' "$HUB_LAYOUT"
 sed -i 's|<include layout="@layout/hub_toolbar_layout" />|<include layout="@layout/hub_toolbar_layout" android:layout_gravity="bottom" />|' "$HUB_LAYOUT"
+perl -0pi -e 's|<include layout="\@layout/hub_toolbar_layout"(?: android:layout_gravity="bottom")? />|<include\n        layout="\@layout/hub_toolbar_layout"\n        android:layout_width="match_parent"\n        android:layout_height="wrap_content"\n        android:layout_gravity="bottom" />|' "$HUB_LAYOUT"
 fi
 
 # crbug.com/404069963: ntp override
