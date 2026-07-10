@@ -844,10 +844,8 @@ path.write_text(text)
 PYCODE
 
 grep -q 'build/build_config.h' "$EXTENSION_TAB_UTIL_CC" || sed -i '/#include "base\/strings\/utf_string_conversions.h"/a\#include "build/build_config.h"' "$EXTENSION_TAB_UTIL_CC"
-grep -q 'chrome/browser/android/tab_android.h' "$EXTENSION_TAB_UTIL_CC" || sed -i '/#include "chrome\/browser\/app_mode\/app_mode_utils.h"/a\
-#if BUILDFLAG(IS_ANDROID)\
-#include "chrome/browser/android/tab_android.h"\
-#endif' "$EXTENSION_TAB_UTIL_CC"
+grep -q 'chrome/browser/android/tab_android.h' "$EXTENSION_TAB_UTIL_CC" || sed -i '/#include "chrome\/browser\/ui\/android\/tab_model\/tab_model.h"/i\
+#include "chrome/browser/android/tab_android.h"' "$EXTENSION_TAB_UTIL_CC"
 python3 - "$EXTENSION_TAB_UTIL_CC" <<'PYCODE'
 from pathlib import Path
 import sys
