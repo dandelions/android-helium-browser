@@ -31,6 +31,7 @@ ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
 MENU_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
 MENU_VIEW_MODEL=chrome/browser/ui/extensions/extensions_menu_view_model.cc
+EXTENSION_ACTION_VIEW_MODEL=chrome/browser/ui/extensions/extension_action_view_model.cc
 TABS_EVENT_ROUTER_CC=chrome/browser/extensions/api/tabs/tabs_event_router.cc
 ZIP_INSTALLER=extensions/browser/zipfile_installer.cc
 WEB_REQUEST_ROUTER=extensions/browser/api/web_request/extension_web_request_event_router.cc
@@ -57,7 +58,7 @@ WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
 TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 HUB_LAYOUT=chrome/browser/hub/internal/android/res/layout/hub_layout.xml
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -1072,6 +1073,17 @@ if "HeliumAndroidExtensionTabIdFallback" not in text:
     )
 path.write_text(text)
 PYCODE
+fi
+
+# Android action state (title/icon/badge/visibility) is stored per tab id.
+# ExtensionActionViewModel still used SessionTabHelper directly, which misses
+# some Android incognito WebContents and makes SwitchyOmega's per-page proxy
+# result title/icon fall back to the default state. Route all action-state
+# lookups through ExtensionTabUtil so they share the TabAndroid fallback above.
+if [ -f "$EXTENSION_ACTION_VIEW_MODEL" ]; then
+    grep -q 'chrome/browser/extensions/extension_tab_util.h' "$EXTENSION_ACTION_VIEW_MODEL" || \
+        sed -i '/#include "chrome\/browser\/extensions\/api\/side_panel\/side_panel_service.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$EXTENSION_ACTION_VIEW_MODEL"
+    perl -0pi -e 's|sessions::SessionTabHelper::IdForTab\(web_contents\)\.id\(\)|extensions::ExtensionTabUtil::GetTabId(web_contents)|g' "$EXTENSION_ACTION_VIEW_MODEL"
 fi
 
 # Do not let extension main-frame blocks/redirects leave the browser restored

@@ -131,6 +131,7 @@ TOOLBAR_ANDROID_H=chrome/browser/ui/android/extensions/extensions_toolbar_androi
 ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate_android.h
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
+EXTENSION_ACTION_VIEW_MODEL=chrome/browser/ui/extensions/extension_action_view_model.cc
 TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 TABS_EVENT_ROUTER_CC=chrome/browser/extensions/api/tabs/tabs_event_router.cc
 CHROME_EXTENSIONS_BROWSER_CLIENT=chrome/browser/extensions/chrome_extensions_browser_client.cc
@@ -970,6 +971,9 @@ if "HeliumAndroidExtensionTabIdFallback" not in text:
     )
 path.write_text(text)
 PYCODE
+
+grep -q 'chrome/browser/extensions/extension_tab_util.h' "$EXTENSION_ACTION_VIEW_MODEL" || sed -i '/#include "chrome\/browser\/extensions\/api\/side_panel\/side_panel_service.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$EXTENSION_ACTION_VIEW_MODEL"
+perl -0pi -e 's|sessions::SessionTabHelper::IdForTab\(web_contents\)\.id\(\)|extensions::ExtensionTabUtil::GetTabId(web_contents)|g' "$EXTENSION_ACTION_VIEW_MODEL"
 
 # ext: priority
 sed -i 's|host_contents_->SetColorProviderSource(NoOpColorProviderSource::Get());|&\nhost_contents_->SetPrimaryPageImportance(content::ChildProcessImportance::IMPORTANT, content::ChildProcessImportance::NORMAL);|' extensions/browser/extension_host.cc
