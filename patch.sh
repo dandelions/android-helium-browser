@@ -972,7 +972,12 @@ if "HeliumAndroidExtensionTabIdFallback" not in text:
 path.write_text(text)
 PYCODE
 
-grep -q 'chrome/browser/extensions/extension_tab_util.h' "$EXTENSION_ACTION_VIEW_MODEL" || sed -i '/#include "chrome\/browser\/extensions\/api\/side_panel\/side_panel_service.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$EXTENSION_ACTION_VIEW_MODEL"
+perl -0pi -e 's|#include "chrome/browser/extensions/extension_tab_util\.h"\n||g' "$EXTENSION_ACTION_VIEW_MODEL"
+if grep -q '#include "chrome/browser/extensions/chrome_extension_function_details.h"' "$EXTENSION_ACTION_VIEW_MODEL"; then
+  sed -i '/#include "chrome\/browser\/extensions\/chrome_extension_function_details.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$EXTENSION_ACTION_VIEW_MODEL"
+else
+  sed -i '/#include "base\/strings\/utf_string_conversions.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$EXTENSION_ACTION_VIEW_MODEL"
+fi
 perl -0pi -e 's|sessions::SessionTabHelper::IdForTab\(web_contents\)\.id\(\)|ExtensionTabUtil::GetTabId(web_contents)|g; s|extensions::ExtensionTabUtil::GetTabId\(web_contents\)|ExtensionTabUtil::GetTabId(web_contents)|g' "$EXTENSION_ACTION_VIEW_MODEL"
 
 # ext: priority
