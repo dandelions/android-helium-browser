@@ -973,7 +973,7 @@ path.write_text(text)
 PYCODE
 
 grep -q 'chrome/browser/extensions/extension_tab_util.h' "$EXTENSION_ACTION_VIEW_MODEL" || sed -i '/#include "chrome\/browser\/extensions\/api\/side_panel\/side_panel_service.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$EXTENSION_ACTION_VIEW_MODEL"
-perl -0pi -e 's|sessions::SessionTabHelper::IdForTab\(web_contents\)\.id\(\)|extensions::ExtensionTabUtil::GetTabId(web_contents)|g' "$EXTENSION_ACTION_VIEW_MODEL"
+perl -0pi -e 's|sessions::SessionTabHelper::IdForTab\(web_contents\)\.id\(\)|ExtensionTabUtil::GetTabId(web_contents)|g; s|extensions::ExtensionTabUtil::GetTabId\(web_contents\)|ExtensionTabUtil::GetTabId(web_contents)|g' "$EXTENSION_ACTION_VIEW_MODEL"
 
 # ext: priority
 sed -i 's|host_contents_->SetColorProviderSource(NoOpColorProviderSource::Get());|&\nhost_contents_->SetPrimaryPageImportance(content::ChildProcessImportance::IMPORTANT, content::ChildProcessImportance::NORMAL);|' extensions/browser/extension_host.cc
