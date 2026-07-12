@@ -1087,7 +1087,7 @@ if [ -f "$EXTENSION_ACTION_VIEW_MODEL" ]; then
     else
         sed -i '/#include "base\/strings\/utf_string_conversions.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$EXTENSION_ACTION_VIEW_MODEL"
     fi
-    perl -0pi -e 's|sessions::SessionTabHelper::IdForTab\(web_contents\)\.id\(\)|ExtensionTabUtil::GetTabId(web_contents)|g; s|extensions::ExtensionTabUtil::GetTabId\(web_contents\)|ExtensionTabUtil::GetTabId(web_contents)|g' "$EXTENSION_ACTION_VIEW_MODEL"
+    perl -0pi -e 's|sessions::SessionTabHelper::IdForTab\(web_contents\)\.id\(\)|extensions::ExtensionTabUtil::GetTabId(web_contents)|g; s|(?<!extensions::)ExtensionTabUtil::GetTabId\(web_contents\)|extensions::ExtensionTabUtil::GetTabId(web_contents)|g; s|extensions::extensions::ExtensionTabUtil::GetTabId\(web_contents\)|extensions::ExtensionTabUtil::GetTabId(web_contents)|g' "$EXTENSION_ACTION_VIEW_MODEL"
 fi
 
 # Do not let extension main-frame blocks/redirects leave the browser restored
