@@ -92,3 +92,7 @@ sign_aab() {
             -signedjar "$2" "$1" "$keyAlias" || exit 1
     fi
 }
+
+version_lt() {
+  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]
+}

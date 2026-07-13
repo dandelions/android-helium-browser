@@ -75,7 +75,7 @@ configure_network_env
 
 if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
     sudo apt-get update
-    sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2 openjdk-17-jre-headless
+    sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick librsvg2-bin ccache zstd bzip2 openjdk-17-jre-headless
 fi
 set_keys
 git config --global user.name "Helium CI"
@@ -414,6 +414,7 @@ EOF
     rm -rf $SCRIPT_DIR/vanadium/patches/*trichrome-{apk-build-targets,browser-apk-targets}.patch
     rm -rf $SCRIPT_DIR/vanadium/patches/*{detailed,supported}-language*.patch
     rm -rf $SCRIPT_DIR/vanadium/patches/*component-updates.patch
+    rm -rf $SCRIPT_DIR/vanadium/patches/*{pdf,PDF,for-content-public}*.patch
     # rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
     replace "$SCRIPT_DIR/vanadium/patches" "VANADIUM" "HELIUM"
     replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
