@@ -772,16 +772,26 @@ grep -q 'components/tabs/public/tab_interface.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/extensions\/extensions_menu_view_model.h"/a\#include "components/tabs/public/tab_interface.h"' "$MENU_DELEGATE_CC"
 grep -q 'extensions/browser/extension_registry.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "components\/tabs\/public\/tab_interface.h"/a\#include "extensions/browser/extension_registry.h"' "$MENU_DELEGATE_CC"
+grep -q 'base/no_destructor.h' "$MENU_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "base/no_destructor.h"' "$MENU_DELEGATE_CC"
 grep -q 'base/memory/weak_ptr.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "base/memory/weak_ptr.h"' "$MENU_DELEGATE_CC"
 grep -q 'g_last_android_extension_action_tab_id' "$MENU_DELEGATE_CC" || \
     sed -i '/constexpr gfx::Size kActionIconSize = gfx::Size(24, 24);/a\
 int g_last_android_extension_action_tab_id = -1;\
-base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;\
+base::WeakPtr<content::WebContents>&\
+GetLastAndroidExtensionActionWebContentsStorage() {\
+  static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;\
+  return *storage;\
+}\
 ' "$MENU_DELEGATE_CC"
-grep -q 'g_last_android_extension_action_web_contents' "$MENU_DELEGATE_CC" || \
+grep -qE 'GetLastAndroidExtensionActionWebContentsStorage|g_last_android_extension_action_web_contents' "$MENU_DELEGATE_CC" || \
     sed -i '/int g_last_android_extension_action_tab_id = -1;/a\
-base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;\
+base::WeakPtr<content::WebContents>&\
+GetLastAndroidExtensionActionWebContentsStorage() {\
+  static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;\
+  return *storage;\
+}\
 ' "$MENU_DELEGATE_CC"
 grep -q 'int GetLastAndroidExtensionActionTabId()' "$MENU_DELEGATE_CC" || \
     sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
@@ -793,14 +803,14 @@ int GetLastAndroidExtensionActionTabId() {\
 grep -q 'content::WebContents\* GetLastAndroidExtensionActionWebContents()' "$MENU_DELEGATE_CC" || \
     sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
 content::WebContents* GetLastAndroidExtensionActionWebContents() {\
-  return g_last_android_extension_action_web_contents.get();\
+  return GetLastAndroidExtensionActionWebContentsStorage().get();\
 }\
 \
 ' "$MENU_DELEGATE_CC"
 grep -q 'void SetLastAndroidExtensionActionWebContents' "$MENU_DELEGATE_CC" || \
     sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
 void SetLastAndroidExtensionActionWebContents(content::WebContents* web_contents) {\
-  g_last_android_extension_action_web_contents =\
+  GetLastAndroidExtensionActionWebContentsStorage() =\
       web_contents ? web_contents->GetWeakPtr()\
                    : base::WeakPtr<content::WebContents>();\
   g_last_android_extension_action_tab_id =\
@@ -809,7 +819,17 @@ void SetLastAndroidExtensionActionWebContents(content::WebContents* web_contents
 \
 ' "$MENU_DELEGATE_CC"
 grep -q 'web_contents ? web_contents->GetWeakPtr()' "$MENU_DELEGATE_CC" || \
-    perl -0pi -e 's|(void SetLastAndroidExtensionActionWebContents\(content::WebContents\* web_contents\) \{\n)|$1  g_last_android_extension_action_web_contents =\n      web_contents ? web_contents->GetWeakPtr()\n                   : base::WeakPtr<content::WebContents>();\n|' "$MENU_DELEGATE_CC"
+    perl -0pi -e 's|(void SetLastAndroidExtensionActionWebContents\(content::WebContents\* web_contents\) \{\n)|$1  GetLastAndroidExtensionActionWebContentsStorage() =\n      web_contents ? web_contents->GetWeakPtr()\n                   : base::WeakPtr<content::WebContents>();\n|' "$MENU_DELEGATE_CC"
+perl -0pi -e 's|base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;|base::WeakPtr<content::WebContents>\&\nGetLastAndroidExtensionActionWebContentsStorage() {\n  static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;\n  return *storage;\n}|g; s|base::NoDestructor<base::WeakPtr<content::WebContents>>\n    g_last_android_extension_action_web_contents;|base::WeakPtr<content::WebContents>\&\nGetLastAndroidExtensionActionWebContentsStorage() {\n  static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;\n  return *storage;\n}|g; s|return g_last_android_extension_action_web_contents\.get\(\);|return GetLastAndroidExtensionActionWebContentsStorage().get();|g; s|return g_last_android_extension_action_web_contents->get\(\);|return GetLastAndroidExtensionActionWebContentsStorage().get();|g; s|(?m)^\s*\*?g_last_android_extension_action_web_contents =|  GetLastAndroidExtensionActionWebContentsStorage() =|g' "$MENU_DELEGATE_CC"
+if ! grep -q 'GetLastAndroidExtensionActionWebContentsStorage()' "$MENU_DELEGATE_CC" || \
+   ! grep -q 'static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;' "$MENU_DELEGATE_CC" || \
+   ! grep -q 'return GetLastAndroidExtensionActionWebContentsStorage().get();' "$MENU_DELEGATE_CC" || \
+   ! grep -q 'GetLastAndroidExtensionActionWebContentsStorage() =' "$MENU_DELEGATE_CC" || \
+   grep -q 'g_last_android_extension_action_web_contents' "$MENU_DELEGATE_CC"; then
+    echo "Android extension action WebContents storage migration failed: $SRC_DIR/$MENU_DELEGATE_CC" >&2
+    exit 1
+fi
+echo "Verified no-destructor Android extension action storage in $SRC_DIR/$MENU_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id\) \{\n  menu_model_->ExecuteAction\(extension_id\);\n\}|void ExtensionsMenuDelegateAndroid::ExecuteAction(\n    JNIEnv* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents* web_contents) {\n  if (web_contents) {\n    tabs::TabInterface* tab =\n        tabs::TabInterface::MaybeGetFromContents(web_contents);\n    BrowserWindowInterface* action_browser =\n        tab ? tab->GetBrowserWindowInterface() : nullptr;\n    TabListInterface* tab_list =\n        action_browser ? TabListInterface::From(action_browser) : nullptr;\n    extensions::ExtensionRegistry* registry =\n        action_browser\n            ? extensions::ExtensionRegistry::Get(action_browser->GetProfile())\n            : nullptr;\n    if (tab_list \&\& registry \&\&\n        registry->enabled_extensions().Contains(extension_id)) {\n      tab_list->ActivateTab(tab->GetHandle());\n      auto action_model = ExtensionActionViewModel::Create(\n          extension_id, action_browser,\n          std::make_unique<ExtensionActionDelegateAndroid>(\n              action_browser, extension_id, toolbar_android_, java_object_));\n      action_model->ExecuteUserAction(\n          ToolbarActionViewModel::InvocationSource::kMenuEntry);\n      return;\n    }\n  }\n\n  menu_model_->ExecuteAction(extension_id);\n}|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|if \(web_contents\) \{\n    g_last_android_extension_action_tab_id = ExtensionTabUtil::GetTabId\(web_contents\);\n  \}|SetLastAndroidExtensionActionWebContents(web_contents);|g' "$MENU_DELEGATE_CC"
 grep -q 'SetLastAndroidExtensionActionWebContents(web_contents);' "$MENU_DELEGATE_CC" || \
