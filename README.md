@@ -88,6 +88,8 @@ All [Vanadium](https://github.com/GrapheneOS/Vanadium) patches are applied by de
 
 This repository provides the build script to compile on the latest Ubuntu, and may also work with other Linux distributions.
 
+See [BUILDING.zh-CN.md](BUILDING.zh-CN.md) for the Chinese local build, incremental build, proxy, signing, and output instructions.
+
 To build these releases yourself via CI (e.g. GitHub Actions), fork this repository. Supply your `base64` encoded `keystore.jks` and `local.properties` (containing your `keyAlias`, `keyPassword` and `storePassword`) to [**Repository secrets**](https://github.com/jqssun/android-helium-browser/blob/main/.github/workflows/build.yml#L47-L48) under **Settings** > **Secrets and variables** > **Actions**. To generate a release, go to **Actions**, select **Build**, and select **Run workflow**. Under **Runner**, you can either use a GitHub-hosted runner by entering `ubuntu-latest`, or `self-hosted` for your own hardware.
 
 ## Credits

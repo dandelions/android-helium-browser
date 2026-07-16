@@ -388,24 +388,7 @@ else
     fi
     git fetch --depth 1 $CHROMIUM_SOURCE +refs/tags/$VERSION:chromium_$VERSION
     git checkout -f $VERSION
-    export COMMIT=$(git show-ref -s $VERSION | head -n1)
-    cat > ../.gclient <<EOF
-solutions = [
-  {
-    "name": "src",
-    "url": "$CHROMIUM_SOURCE@$COMMIT",
-    "deps_file": "DEPS",
-    "managed": False,
-    "custom_vars": {
-      "checkout_android_prebuilts_build_tools": True,
-      "checkout_pgo_profiles": True,
-      "checkout_telemetry_dependencies": False,
-      "codesearch": "Debug",
-    },
-  },
-]
-target_os = ["android"]
-EOF
+    cp "$SCRIPT_DIR/.gclient" ../.gclient
     git submodule foreach git config -f ./.git/config submodule.$name.ignore all
     git config --add remote.origin.fetch '+refs/tags/*:refs/tags/*'
     reset_chromium_submodules
@@ -414,6 +397,7 @@ EOF
     rm -rf $SCRIPT_DIR/vanadium/patches/*trichrome-{apk-build-targets,browser-apk-targets}.patch
     rm -rf $SCRIPT_DIR/vanadium/patches/*{detailed,supported}-language*.patch
     rm -rf $SCRIPT_DIR/vanadium/patches/*component-updates.patch
+    rm -rf $SCRIPT_DIR/vanadium/patches/*{pdf,PDF,for-content-public}*.patch
     # rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
     replace "$SCRIPT_DIR/vanadium/patches" "VANADIUM" "HELIUM"
     replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
