@@ -3,6 +3,30 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${1:-$SCRIPT_DIR/chromium/src}"
+VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
+
+EXPECTED_VANADIUM_COMMIT="$(git -C "$SCRIPT_DIR" ls-tree HEAD vanadium | awk '{print $3}')"
+ACTUAL_VANADIUM_COMMIT="$(git -C "$SCRIPT_DIR/vanadium" rev-parse HEAD 2>/dev/null || true)"
+if [ -z "$EXPECTED_VANADIUM_COMMIT" ] || [ "$ACTUAL_VANADIUM_COMMIT" != "$EXPECTED_VANADIUM_COMMIT" ]; then
+    echo "Vanadium submodule does not match the current repository." >&2
+    echo "Expected: ${EXPECTED_VANADIUM_COMMIT:-unknown}" >&2
+    echo "Actual:   ${ACTUAL_VANADIUM_COMMIT:-missing}" >&2
+    echo "Run:" >&2
+    echo "  git -C vanadium reset --hard" >&2
+    echo "  git -C vanadium clean -fd" >&2
+    echo "  git submodule update --init --recursive" >&2
+    exit 1
+fi
+if [ -n "$(git -C "$SCRIPT_DIR/vanadium" status --porcelain)" ]; then
+    echo "Vanadium submodule contains local changes from an older build." >&2
+    echo "Reset and update it before applying hotfixes:" >&2
+    echo "  git -C vanadium reset --hard" >&2
+    echo "  git -C vanadium clean -fd" >&2
+    echo "  git submodule update --init --recursive" >&2
+    exit 1
+fi
+
+TARGET_VERSION="$(grep -m1 -o '[0-9]\+\(\.[0-9]\+\)\{3\}' "$VERSION_ARGS" || true)"
 
 if [ ! -d "$SRC_DIR" ]; then
     echo "Chromium source directory not found: $SRC_DIR" >&2
@@ -91,6 +115,12 @@ CHROMIUM_VERSION="$(awk -F= '
         print value["MAJOR"] "." value["MINOR"] "." value["BUILD"] "." value["PATCH"]
     }
 ' "$CHROME_VERSION_FILE")"
+if [ -z "$TARGET_VERSION" ] || [ "$CHROMIUM_VERSION" != "$TARGET_VERSION" ]; then
+    echo "Existing Chromium source version $CHROMIUM_VERSION does not match repository version ${TARGET_VERSION:-unknown}." >&2
+    echo "hotfix_existing_src.sh cannot upgrade Chromium versions." >&2
+    echo "Run a full ./build.sh without FAST_LOCAL_BUILD." >&2
+    exit 1
+fi
 echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
 
 # Titanium v150.0.7871.124 compatibility fixes adapted to the Helium-renamed

@@ -106,6 +106,27 @@ NINJA_JOBS=14 \
 ./build.sh
 ```
 
+`origin: command not found` 表示复制命令时把 `origin main` 单独放到了一行。拉取命令必须保持在同一行：
+
+```bash
+git -c http.proxy=http://192.168.2.1:37896 pull --ff-only origin main
+```
+
+旧版 `build.sh` 会直接修改 `vanadium/patches`，导致子模块无法更新。如果看到 `Your local changes ... would be overwritten by checkout`，先清理这些由旧构建生成的修改：
+
+```bash
+cd /root/android-helium-browser
+
+git -C vanadium reset --hard
+git -C vanadium clean -fd
+
+git submodule sync --recursive
+git -c http.proxy=http://192.168.2.1:37896 \
+    submodule update --init --recursive --jobs 8
+```
+
+新版构建脚本会复制 Vanadium 补丁到临时目录后再做 Helium 名称替换，不再改脏子模块。
+
 执行 Localbuild 前必须确认仓库要求的 Chromium 版本与现有源码版本一致：
 
 ```bash
@@ -117,6 +138,19 @@ awk -F= '
 ```
 
 两边都应显示 `150.0.7871.124`。`hotfix_existing_src.sh` 负责把新的下游补丁应用到已有源码，但不会把 Chromium `150.0.7871.63` 升级成 `150.0.7871.124`。版本不一致时必须执行完整构建，让 `build.sh` 重新获取目标 Chromium 标签并应用 Vanadium 补丁。
+
+如果现有源码是 `150.0.7871.114`，不要继续 Localbuild。`.124` 启用了依赖 Vanadium V8 子项目补丁的 DrumBrake；旧源码缺少该补丁时会在 `v8/BUILD.gn` 报 `DrumBrake is only available`。清理子模块后直接执行一次完整构建：
+
+```bash
+BUILD_PROXY=http://192.168.2.1:37896 \
+BUILD_ARM=0 \
+BUILD_ARM64=1 \
+BUILD_AAB=0 \
+NINJA_JOBS=14 \
+./build.sh
+```
+
+新版 `build.sh` 和 `hotfix_existing_src.sh` 会在子模块提交、Chromium 版本或 DrumBrake 子项目补丁不匹配时提前停止，避免生成文件名为 `.124`、实际源码却仍是 `.114` 的 APK。
 
 如果只修改了本地补丁脚本，也可以单独执行：
 

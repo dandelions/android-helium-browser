@@ -4,6 +4,43 @@ set -e
 SCRIPT_DIR=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 source "$SCRIPT_DIR/common.sh"
 cd "$SCRIPT_DIR"
+
+validate_vanadium_submodule() {
+    local expected_commit
+    local actual_commit
+
+    expected_commit="$(git -C "$SCRIPT_DIR" ls-tree HEAD vanadium | awk '{print $3}')"
+    actual_commit="$(git -C "$SCRIPT_DIR/vanadium" rev-parse HEAD 2>/dev/null || true)"
+    if [ -z "$expected_commit" ] || [ "$actual_commit" != "$expected_commit" ]; then
+        echo "Vanadium submodule is not at the commit required by the current repository." >&2
+        echo "Expected: ${expected_commit:-unknown}" >&2
+        echo "Actual:   ${actual_commit:-missing}" >&2
+        echo "Reset the old build-generated changes, then update the submodule:" >&2
+        echo "  git -C vanadium reset --hard" >&2
+        echo "  git -C vanadium clean -fd" >&2
+        echo "  git submodule update --init --recursive" >&2
+        exit 1
+    fi
+    if [ -n "$(git -C "$SCRIPT_DIR/vanadium" status --porcelain)" ]; then
+        echo "Vanadium submodule contains local changes left by an older build." >&2
+        echo "Run the following before building:" >&2
+        echo "  git -C vanadium reset --hard" >&2
+        echo "  git -C vanadium clean -fd" >&2
+        echo "  git submodule update --init --recursive" >&2
+        exit 1
+    fi
+}
+
+read_chromium_version() {
+    awk -F= '
+        /^(MAJOR|MINOR|BUILD|PATCH)=/ { value[$1] = $2 }
+        END {
+            print value["MAJOR"] "." value["MINOR"] "." value["BUILD"] "." value["PATCH"]
+        }
+    ' "$1"
+}
+
+validate_vanadium_submodule
 VERSION_ARGS="$SCRIPT_DIR/vanadium/args.gn"
 if [ ! -f "$VERSION_ARGS" ]; then
     echo "Missing $VERSION_ARGS. Run: git submodule update --init --recursive" >&2
@@ -27,6 +64,21 @@ BUILD_VERSION_INCREMENT="${BUILD_VERSION_INCREMENT:-$((($(date -u +%s) - 1577836
 if [ "$FAST_LOCAL_BUILD" = "1" ]; then
     SKIP_SOURCE_PREPARE=1
     SKIP_SYSTEM_DEPS=1
+fi
+
+if [ "$SKIP_SOURCE_PREPARE" = "1" ] && [ -f "$SCRIPT_DIR/chromium/src/chrome/VERSION" ]; then
+    LOCAL_CHROMIUM_VERSION="$(read_chromium_version "$SCRIPT_DIR/chromium/src/chrome/VERSION")"
+    if [ "$LOCAL_CHROMIUM_VERSION" != "$VERSION" ]; then
+        echo "FAST_LOCAL_BUILD cannot reuse Chromium $LOCAL_CHROMIUM_VERSION for repository version $VERSION." >&2
+        echo "Run a full build without FAST_LOCAL_BUILD so Chromium and Vanadium are upgraded together." >&2
+        exit 1
+    fi
+    if grep -q '^v8_enable_drumbrake[[:space:]]*=[[:space:]]*true' "$SCRIPT_DIR/args.gn" &&
+        ! grep -q 'target_os == "android" ||' "$SCRIPT_DIR/chromium/src/v8/gni/v8.gni"; then
+        echo "Existing Chromium source is missing the Vanadium V8 DrumBrake Android patch." >&2
+        echo "Run a full build without FAST_LOCAL_BUILD to apply subproject patches." >&2
+        exit 1
+    fi
 fi
 if [ "$BUILD_ARM" != "1" ] && [ "$BUILD_ARM64" != "1" ]; then
     echo "At least one target ABI must be enabled. Set BUILD_ARM=1 or BUILD_ARM64=1." >&2
@@ -393,16 +445,30 @@ else
     git config --add remote.origin.fetch '+refs/tags/*:refs/tags/*'
     reset_chromium_submodules
 
+    # Work on a temporary patch copy. Older versions modified the Vanadium
+    # submodule in place, which prevented future git submodule updates.
+    VANADIUM_PATCH_DIR="$(mktemp -d)"
+    cleanup_vanadium_patch_dir() {
+        if [ -n "${VANADIUM_PATCH_DIR:-}" ] && [ -d "$VANADIUM_PATCH_DIR" ]; then
+            rm -rf "$VANADIUM_PATCH_DIR"
+        fi
+    }
+    trap cleanup_vanadium_patch_dir EXIT
+    cp -a "$SCRIPT_DIR/vanadium/patches/." "$VANADIUM_PATCH_DIR/"
+
     # https://grapheneos.org/build#browser-and-webview
-    rm -rf $SCRIPT_DIR/vanadium/patches/*trichrome-{apk-build-targets,browser-apk-targets}.patch
-    rm -rf $SCRIPT_DIR/vanadium/patches/*{detailed,supported}-language*.patch
-    rm -rf $SCRIPT_DIR/vanadium/patches/*component-updates.patch
-    rm -rf $SCRIPT_DIR/vanadium/patches/*{pdf,PDF,for-content-public}*.patch
+    rm -f $VANADIUM_PATCH_DIR/*trichrome-{apk-build-targets,browser-apk-targets}.patch
+    rm -f $VANADIUM_PATCH_DIR/*{detailed,supported}-language*.patch
+    rm -f $VANADIUM_PATCH_DIR/*component-updates.patch
+    rm -f $VANADIUM_PATCH_DIR/*{pdf,PDF,for-content-public}*.patch
     # rm -rf $SCRIPT_DIR/vanadium/patches/*crashpad*.patch
-    replace "$SCRIPT_DIR/vanadium/patches" "VANADIUM" "HELIUM"
-    replace "$SCRIPT_DIR/vanadium/patches" "Vanadium" "Helium"
-    replace "$SCRIPT_DIR/vanadium/patches" "vanadium" "helium"
-    git am --whitespace=nowarn --keep-non-patch $SCRIPT_DIR/vanadium/patches/*.patch
+    replace "$VANADIUM_PATCH_DIR" "VANADIUM" "HELIUM"
+    replace "$VANADIUM_PATCH_DIR" "Vanadium" "Helium"
+    replace "$VANADIUM_PATCH_DIR" "vanadium" "helium"
+    git am --whitespace=nowarn --keep-non-patch $VANADIUM_PATCH_DIR/*.patch
+    cleanup_vanadium_patch_dir
+    VANADIUM_PATCH_DIR=""
+    trap - EXIT
     patch_filter_list_downloader
 
     cd ..
