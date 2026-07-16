@@ -1831,6 +1831,26 @@ if start >= 0:
     if end is None:
         raise SystemExit(f"query block end not found in {path}")
     text = text[:start] + robust_if + text[end:]
+
+# Migrate an already-patched checkout even when its surrounding query block
+# no longer matches the replacement marker above. Only rename the outer
+# cached WebContents variable, stopping before the later tab-id lookup local.
+old_outer = """    content::WebContents* action_contents =
+        GetLastAndroidExtensionActionWebContents();
+"""
+outer_start = text.find(old_outer)
+if outer_start >= 0:
+    inner_start = text.find(
+        "      content::WebContents* action_contents = nullptr;",
+        outer_start + len(old_outer))
+    if inner_start < 0:
+        raise SystemExit(f"inner action contents declaration not found in {path}")
+    outer_block = text[outer_start:inner_start]
+    outer_block = re.sub(
+        r"\baction_contents\b", "last_action_contents", outer_block)
+    text = text[:outer_start] + outer_block + text[inner_start:]
+if old_outer in text:
+    raise SystemExit(f"action contents shadow migration failed in {path}")
 path.write_text(text)
 PYCODE
 fi
