@@ -57,13 +57,82 @@ WINDOW_OPEN_TRAITS=ui/base/mojom/window_open_disposition_mojom_traits.h
 WEB_CONTENTS_IMPL=content/browser/web_contents/web_contents_impl.cc
 TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 HUB_LAYOUT=chrome/browser/hub/internal/android/res/layout/hub_layout.xml
+HELIUM_CONF_PARSER=helium/android_config/parser/java/src/app/helium/config/HeliumConfParser.java
+LANGUAGE_SETTINGS_EXT=helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java
+SETTINGS_SEARCH_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/settings/search/SettingsSearchCoordinator.java
+GL_FEATURES=ui/gl/gl_features.cc
+DOWNLOAD_CRX_UTIL=chrome/browser/download/download_crx_util.cc
+ACTION_LIST_COORDINATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListCoordinator.java
+EXTENSION_POPUP_CONTENTS=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java
+EXTENSION_INSTALL_DIALOG=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionInstallDialogBridge.java
+DEFAULT_LOCALE_HANDLER=extensions/common/manifest_handlers/default_locale_handler.cc
+EXTENSION_L10N_UTIL=extensions/common/extension_l10n_util.cc
+UNPACKED_INSTALLER=extensions/browser/unpacked_installer.cc
+VIRTUAL_DOCUMENT_PATH=base/android/java/src/org/chromium/base/VirtualDocumentPath.java
+SWIPE_REFRESH_HANDLER=chrome/android/java/src/org/chromium/chrome/browser/SwipeRefreshHandler.java
+INCOGNITO_BACK_HANDLER=chrome/browser/back_press/android/java/src/org/chromium/chrome/browser/back_press/MinimizeAppAndCloseTabBackPressHandler.java
+CHROME_VERSION_FILE=chrome/VERSION
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
     fi
 done
+
+version_lt() {
+    [ "$1" != "$2" ] &&
+        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]
+}
+
+CHROMIUM_VERSION="$(awk -F= '
+    /^(MAJOR|MINOR|BUILD|PATCH)=/ { value[$1] = $2 }
+    END {
+        print value["MAJOR"] "." value["MINOR"] "." value["BUILD"] "." value["PATCH"]
+    }
+' "$CHROME_VERSION_FILE")"
+echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
+
+# Titanium v150.0.7871.124 compatibility fixes adapted to the Helium-renamed
+# Vanadium source tree. Every insertion is guarded because this script is
+# intentionally run repeatedly before FAST_LOCAL_BUILD.
+grep -q 'if (!isEligible()) { return; }' "$HELIUM_CONF_PARSER" || \
+    sed -i 's|private static void init(Context ctx, SpecType specType) {|private static void init(Context ctx, SpecType specType) { if (!isEligible()) { return; }|' "$HELIUM_CONF_PARSER"
+sed -i '/safelyRemovePreference(prefFragment/d' "$LANGUAGE_SETTINGS_EXT"
+sed -i '/removeEntryForKey(fragmentName, "translate_switch")/d' "$SETTINGS_SEARCH_COORDINATOR"
+sed -i '/BASE_FEATURE(kFallbackToSWIfGLES3NotSupported,/,/#endif/ s/base::FEATURE_ENABLED_BY_DEFAULT/base::FEATURE_DISABLED_BY_DEFAULT/' "$GL_FEATURES"
+
+grep -q 'addons.opera.com.*delivery.mp.microsoft.com' "$DOWNLOAD_CRX_UTIL" || \
+    sed -i '/^bool OffStoreInstallAllowedByPrefs(/a\  for (const char* d : {"addons.opera.com", "operacdn.com", "microsoftedge.microsoft.com", "edge.microsoft.com", "delivery.mp.microsoft.com"}) if (item.GetURL().DomainIs(d) || item.GetReferrerUrl().DomainIs(d)) return true;' "$DOWNLOAD_CRX_UTIL"
+
+grep -q 'public View getContainerView()' "$ACTION_LIST_COORDINATOR" || \
+    sed -i '/public class RecyclerViewDelegate {$/a\public View getContainerView() { return mContainer; }' "$ACTION_LIST_COORDINATOR"
+sed -i '/private void showPopupOnAnchor() {/,/private void closePopup() {/ s|if (buttonView == null) {|if (false) {|' "$ACTION_LIST_MEDIATOR"
+sed -i 's|buttonView.setIsPressed(true);|if (buttonView != null) buttonView.setIsPressed(true);|' "$ACTION_LIST_MEDIATOR"
+grep -q 'mRecyclerViewDelegate.getContainerView()' "$ACTION_LIST_MEDIATOR" || \
+    sed -i '/[[:space:]]mWindowAndroid,/!b;n;s|[[:space:]]buttonView,|buttonView != null ? buttonView : mRecyclerViewDelegate.getContainerView(),|' "$ACTION_LIST_MEDIATOR"
+grep -q 'if (event == null) return false;' "$EXTENSION_POPUP_CONTENTS" || \
+    sed -i 's|private boolean handleKeyboardEvent(WebContents webContents, KeyEvent event) {|private boolean handleKeyboardEvent(WebContents webContents, KeyEvent event) { if (event == null) return false;|' "$EXTENSION_POPUP_CONTENTS"
+
+sed -i 's|.with(ModalDialogProperties.FILTER_TOUCH_FOR_SECURITY, true)|.with(ModalDialogProperties.FILTER_TOUCH_FOR_SECURITY, false)|' "$EXTENSION_INSTALL_DIALOG"
+grep -q 'locale_path.IsContentUri()' "$DEFAULT_LOCALE_HANDLER" || \
+    sed -i 's|while (!(locale_path = locales.Next()).empty()) {|&if (locale_path.IsContentUri()) { locale_path = path.Append(locales.GetInfo().GetName()); }|' "$DEFAULT_LOCALE_HANDLER"
+grep -q 'locale_folder.IsContentUri()' "$EXTENSION_L10N_UTIL" || \
+    sed -i 's|while (!(locale_folder = locales.Next()).empty()) {|&if (locale_folder.IsContentUri()) { locale_folder = locale_path.Append(locales.GetInfo().GetName()); }|' "$EXTENSION_L10N_UTIL"
+grep -q 'extension_path_.IsVirtualDocumentPath()' "$UNPACKED_INSTALLER" || \
+    sed -i '/extension_l10n_util::ValidateExtensionLocales($/,/error) &&$/{s|extension_l10n_util::ValidateExtensionLocales(|(extension_path_.IsVirtualDocumentPath() \|\| &|;s|error) &&|error)) \&\&|}' "$UNPACKED_INSTALLER"
+
+grep -q 'String fastId = mRelativePath' "$VIRTUAL_DOCUMENT_PATH" || \
+    sed -i 's|assert treeId.equals(documentId);|&\n if ("com.android.externalstorage.documents".equals(mAuthority)) { String fastId = mRelativePath.isEmpty() ? treeId : (treeId.endsWith(":") ? treeId + mRelativePath : treeId + "/" + mRelativePath); Uri fast = DocumentsContract.buildDocumentUriUsingTree(tree, fastId); return contentUriExists(fast) ? fast : null; }|' "$VIRTUAL_DOCUMENT_PATH"
+
+if version_lt "$CHROMIUM_VERSION" "151.0.7922.0"; then
+    sed -i 's|if (mContainerView != null) mSwipeRefreshLayout.setEnabled(true);|if (mTab.getContentView() != null) mSwipeRefreshLayout.setEnabled(true);|' "$SWIPE_REFRESH_HANDLER"
+    sed -i 's|assumeNonNull(mContainerView).addView(mSwipeRefreshLayout);|assumeNonNull(mTab.getContentView()).addView(mSwipeRefreshLayout);|' "$SWIPE_REFRESH_HANDLER"
+    sed -i 's|assumeNonNull(mContainerView).removeView(mSwipeRefreshLayout);|((ViewGroup) mSwipeRefreshLayout.getParent()).removeView(mSwipeRefreshLayout);|' "$SWIPE_REFRESH_HANDLER"
+fi
+
+grep -q 'tab.isIncognitoBranded()).*mSystemBackPressSupplier.set(true)' "$INCOGNITO_BACK_HANDLER" || \
+    sed -i 's|private void onTabChanged(@Nullable Tab tab) {|private void onTabChanged(@Nullable Tab tab) { if (tab != null \&\& tab.isIncognitoBranded()) { mSystemBackPressSupplier.set(true); return; }|' "$INCOGNITO_BACK_HANDLER"
 
 # Desktop-Android arm64 Chrome can pull in android_webview's arm64 toolchain
 # during GN generation. Chromium's timestamp.gni only expected the default
@@ -609,20 +678,21 @@ PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || \
     sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab suppliedTab = mCurrentTabSupplier.get();\
-        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
-            return suppliedTab.getWebContents();\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
+        if (incognitoTab != null\
+                && incognitoTab.getWebContents() != null\
+                && (mTabModelSelector.isOffTheRecordModelSelected()\
+                        || incognitoTab.isUserInteractable()\
+                        || incognitoTab.isActivated())) {\
+            return incognitoTab.getWebContents();\
         }\
         Tab currentTab = mTabModelSelector.getCurrentTab();\
         if (currentTab != null && currentTab.getWebContents() != null) {\
             return currentTab.getWebContents();\
         }\
-        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
-        if (incognitoTab != null\
-                && (mTabModelSelector.isOffTheRecordModelSelected()\
-                        || incognitoTab.isUserInteractable()\
-                        || incognitoTab.isActivated())) {\
-            return incognitoTab.getWebContents();\
+        Tab suppliedTab = mCurrentTabSupplier.get();\
+        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
+            return suppliedTab.getWebContents();\
         }\
         return incognitoTab != null ? incognitoTab.getWebContents() : null;\
     }\
@@ -647,6 +717,11 @@ grep -q 'GetLastAndroidExtensionActionTabId' "$MENU_DELEGATE_H" || \
 int GetLastAndroidExtensionActionTabId();\
 \
 ' "$MENU_DELEGATE_H"
+grep -q 'GetLastAndroidExtensionActionWebContents' "$MENU_DELEGATE_H" || \
+    sed -i '/namespace extensions {/a\
+content::WebContents* GetLastAndroidExtensionActionWebContents();\
+\
+' "$MENU_DELEGATE_H"
 grep -q 'SetLastAndroidExtensionActionWebContents' "$MENU_DELEGATE_H" || \
     sed -i '/namespace extensions {/a\
 void SetLastAndroidExtensionActionWebContents(content::WebContents* web_contents);\
@@ -667,9 +742,16 @@ grep -q 'components/tabs/public/tab_interface.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/extensions\/extensions_menu_view_model.h"/a\#include "components/tabs/public/tab_interface.h"' "$MENU_DELEGATE_CC"
 grep -q 'extensions/browser/extension_registry.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "components\/tabs\/public\/tab_interface.h"/a\#include "extensions/browser/extension_registry.h"' "$MENU_DELEGATE_CC"
+grep -q 'base/memory/weak_ptr.h' "$MENU_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "base/memory/weak_ptr.h"' "$MENU_DELEGATE_CC"
 grep -q 'g_last_android_extension_action_tab_id' "$MENU_DELEGATE_CC" || \
     sed -i '/constexpr gfx::Size kActionIconSize = gfx::Size(24, 24);/a\
 int g_last_android_extension_action_tab_id = -1;\
+base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;\
+' "$MENU_DELEGATE_CC"
+grep -q 'g_last_android_extension_action_web_contents' "$MENU_DELEGATE_CC" || \
+    sed -i '/int g_last_android_extension_action_tab_id = -1;/a\
+base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;\
 ' "$MENU_DELEGATE_CC"
 grep -q 'int GetLastAndroidExtensionActionTabId()' "$MENU_DELEGATE_CC" || \
     sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
@@ -678,14 +760,26 @@ int GetLastAndroidExtensionActionTabId() {\
 }\
 \
 ' "$MENU_DELEGATE_CC"
+grep -q 'content::WebContents\* GetLastAndroidExtensionActionWebContents()' "$MENU_DELEGATE_CC" || \
+    sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
+content::WebContents* GetLastAndroidExtensionActionWebContents() {\
+  return g_last_android_extension_action_web_contents.get();\
+}\
+\
+' "$MENU_DELEGATE_CC"
 grep -q 'void SetLastAndroidExtensionActionWebContents' "$MENU_DELEGATE_CC" || \
     sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
 void SetLastAndroidExtensionActionWebContents(content::WebContents* web_contents) {\
+  g_last_android_extension_action_web_contents =\
+      web_contents ? web_contents->GetWeakPtr()\
+                   : base::WeakPtr<content::WebContents>();\
   g_last_android_extension_action_tab_id =\
       web_contents ? ExtensionTabUtil::GetTabId(web_contents) : -1;\
 }\
 \
 ' "$MENU_DELEGATE_CC"
+grep -q 'web_contents ? web_contents->GetWeakPtr()' "$MENU_DELEGATE_CC" || \
+    perl -0pi -e 's|(void SetLastAndroidExtensionActionWebContents\(content::WebContents\* web_contents\) \{\n)|$1  g_last_android_extension_action_web_contents =\n      web_contents ? web_contents->GetWeakPtr()\n                   : base::WeakPtr<content::WebContents>();\n|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id\) \{\n  menu_model_->ExecuteAction\(extension_id\);\n\}|void ExtensionsMenuDelegateAndroid::ExecuteAction(\n    JNIEnv* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents* web_contents) {\n  if (web_contents) {\n    tabs::TabInterface* tab =\n        tabs::TabInterface::MaybeGetFromContents(web_contents);\n    BrowserWindowInterface* action_browser =\n        tab ? tab->GetBrowserWindowInterface() : nullptr;\n    TabListInterface* tab_list =\n        action_browser ? TabListInterface::From(action_browser) : nullptr;\n    extensions::ExtensionRegistry* registry =\n        action_browser\n            ? extensions::ExtensionRegistry::Get(action_browser->GetProfile())\n            : nullptr;\n    if (tab_list \&\& registry \&\&\n        registry->enabled_extensions().Contains(extension_id)) {\n      tab_list->ActivateTab(tab->GetHandle());\n      auto action_model = ExtensionActionViewModel::Create(\n          extension_id, action_browser,\n          std::make_unique<ExtensionActionDelegateAndroid>(\n              action_browser, extension_id, toolbar_android_, java_object_));\n      action_model->ExecuteUserAction(\n          ToolbarActionViewModel::InvocationSource::kMenuEntry);\n      return;\n    }\n  }\n\n  menu_model_->ExecuteAction(extension_id);\n}|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|if \(web_contents\) \{\n    g_last_android_extension_action_tab_id = ExtensionTabUtil::GetTabId\(web_contents\);\n  \}|SetLastAndroidExtensionActionWebContents(web_contents);|g' "$MENU_DELEGATE_CC"
 grep -q 'SetLastAndroidExtensionActionWebContents(web_contents);' "$MENU_DELEGATE_CC" || \
@@ -828,20 +922,21 @@ PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$ACTION_LIST_MEDIATOR" || \
     sed -i '/private void updateActionPropertiesForAll(WebContents webContents) {/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab suppliedTab = mCurrentTabSupplier.get();\
-        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
-            return suppliedTab.getWebContents();\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
+        if (incognitoTab != null\
+                && incognitoTab.getWebContents() != null\
+                && (mTabModelSelector.isOffTheRecordModelSelected()\
+                        || incognitoTab.isUserInteractable()\
+                        || incognitoTab.isActivated())) {\
+            return incognitoTab.getWebContents();\
         }\
         Tab currentTab = mTabModelSelector.getCurrentTab();\
         if (currentTab != null && currentTab.getWebContents() != null) {\
             return currentTab.getWebContents();\
         }\
-        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
-        if (incognitoTab != null\
-                && (mTabModelSelector.isOffTheRecordModelSelected()\
-                        || incognitoTab.isUserInteractable()\
-                        || incognitoTab.isActivated())) {\
-            return incognitoTab.getWebContents();\
+        Tab suppliedTab = mCurrentTabSupplier.get();\
+        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
+            return suppliedTab.getWebContents();\
         }\
         return incognitoTab != null ? incognitoTab.getWebContents() : null;\
     }\
@@ -1251,6 +1346,7 @@ text = text.replace(
     '')
 forward_decl = """#if BUILDFLAG(IS_ANDROID)
 int GetLastAndroidExtensionActionTabId();
+content::WebContents* GetLastAndroidExtensionActionWebContents();
 #endif
 
 """
@@ -1259,6 +1355,12 @@ if "int GetLastAndroidExtensionActionTabId();" not in text:
     if namespace_anchor not in text:
         raise SystemExit(f"namespace pattern not found in {path}")
     text = text.replace(namespace_anchor, namespace_anchor + forward_decl, 1)
+elif "content::WebContents* GetLastAndroidExtensionActionWebContents();" not in text:
+    text = text.replace(
+        "int GetLastAndroidExtensionActionTabId();\n",
+        "int GetLastAndroidExtensionActionTabId();\n"
+        "content::WebContents* GetLastAndroidExtensionActionWebContents();\n",
+        1)
 old = """#if BUILDFLAG(IS_ANDROID)
   const bool helium_android_incognito_direct_query =
       query_info_.active && *query_info_.active &&
@@ -1461,6 +1563,35 @@ text = text.replace(
     "if (!contents || !contents->GetBrowserContext()->IsOffTheRecord() ||\\n"
     "          contents->GetVisibility() != content::Visibility::VISIBLE) {")
 robust_if = """  if (helium_android_current_tab_query) {
+    content::WebContents* action_contents =
+        GetLastAndroidExtensionActionWebContents();
+    Profile* calling_profile =
+        Profile::FromBrowserContext(browser_context());
+    Profile* action_profile =
+        action_contents
+            ? Profile::FromBrowserContext(action_contents->GetBrowserContext())
+            : nullptr;
+    if (action_contents && action_profile &&
+        calling_profile->IsSameOrParent(action_profile)) {
+      TabAndroid* android_tab = TabAndroid::FromWebContents(action_contents);
+      bool is_current_tab =
+          android_tab &&
+          (android_tab->IsUserInteractable() || android_tab->IsActivated());
+      base::ListValue direct_result;
+      ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+          ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+      base::DictValue tab_value =
+          ExtensionTabUtil::CreateTabObject(action_contents, dont_scrub,
+                                            extension())
+              .ToValue();
+      if (is_current_tab || action_profile->IsOffTheRecord()) {
+        tab_value.Set(tabs_constants::kActiveKey, true);
+        tab_value.Set(tabs_constants::kSelectedKey, true);
+      }
+      direct_result.Append(std::move(tab_value));
+      return RespondNow(WithArguments(std::move(direct_result)));
+    }
+
     for (int pass = 0; pass < 2; ++pass) {
       for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
         TabListInterface* tab_list = TabListInterface::From(browser);
@@ -1594,6 +1725,7 @@ robust_if = """  if (helium_android_current_tab_query) {
         append_tab(tab ? tab->GetContents() : nullptr, tab_list, i);
       }
     }
+    append_tab(GetLastAndroidExtensionActionWebContents(), nullptr, -1);
     int action_tab_id = GetLastAndroidExtensionActionTabId();
     if (action_tab_id >= 0) {
       WindowController* action_window = nullptr;

@@ -553,20 +553,21 @@ path.write_text(text)
 PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$MENU_MEDIATOR" || sed -i '/private @ExtensionsMenuProperties.Page int getCurrentPage()/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab suppliedTab = mCurrentTabSupplier.get();\
-        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
-            return suppliedTab.getWebContents();\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
+        if (incognitoTab != null\
+                && incognitoTab.getWebContents() != null\
+                && (mTabModelSelector.isOffTheRecordModelSelected()\
+                        || incognitoTab.isUserInteractable()\
+                        || incognitoTab.isActivated())) {\
+            return incognitoTab.getWebContents();\
         }\
         Tab currentTab = mTabModelSelector.getCurrentTab();\
         if (currentTab != null && currentTab.getWebContents() != null) {\
             return currentTab.getWebContents();\
         }\
-        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
-        if (incognitoTab != null\
-                && (mTabModelSelector.isOffTheRecordModelSelected()\
-                        || incognitoTab.isUserInteractable()\
-                        || incognitoTab.isActivated())) {\
-            return incognitoTab.getWebContents();\
+        Tab suppliedTab = mCurrentTabSupplier.get();\
+        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
+            return suppliedTab.getWebContents();\
         }\
         return incognitoTab != null ? incognitoTab.getWebContents() : null;\
     }\
@@ -589,6 +590,10 @@ grep -q 'GetLastAndroidExtensionActionTabId' "$MENU_DELEGATE_H" || sed -i '/name
 int GetLastAndroidExtensionActionTabId();\
 \
 ' "$MENU_DELEGATE_H"
+grep -q 'GetLastAndroidExtensionActionWebContents' "$MENU_DELEGATE_H" || sed -i '/namespace extensions {/a\
+content::WebContents* GetLastAndroidExtensionActionWebContents();\
+\
+' "$MENU_DELEGATE_H"
 grep -q 'SetLastAndroidExtensionActionWebContents' "$MENU_DELEGATE_H" || sed -i '/namespace extensions {/a\
 void SetLastAndroidExtensionActionWebContents(content::WebContents* web_contents);\
 \
@@ -603,8 +608,13 @@ grep -q 'chrome/browser/tab_list/tab_list_interface.h' "$MENU_DELEGATE_CC" || se
 grep -q 'chrome/browser/ui/toolbar/toolbar_action_view_model.h' "$MENU_DELEGATE_CC" || sed -i '/#include "chrome\/browser\/ui\/extensions\/extensions_menu_view_model.h"/a\#include "chrome/browser/ui/toolbar/toolbar_action_view_model.h"' "$MENU_DELEGATE_CC"
 grep -q 'components/tabs/public/tab_interface.h' "$MENU_DELEGATE_CC" || sed -i '/#include "chrome\/browser\/ui\/extensions\/extensions_menu_view_model.h"/a\#include "components/tabs/public/tab_interface.h"' "$MENU_DELEGATE_CC"
 grep -q 'extensions/browser/extension_registry.h' "$MENU_DELEGATE_CC" || sed -i '/#include "components\/tabs\/public\/tab_interface.h"/a\#include "extensions/browser/extension_registry.h"' "$MENU_DELEGATE_CC"
+grep -q 'base/memory/weak_ptr.h' "$MENU_DELEGATE_CC" || sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "base/memory/weak_ptr.h"' "$MENU_DELEGATE_CC"
 grep -q 'g_last_android_extension_action_tab_id' "$MENU_DELEGATE_CC" || sed -i '/constexpr gfx::Size kActionIconSize = gfx::Size(24, 24);/a\
 int g_last_android_extension_action_tab_id = -1;\
+base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;\
+' "$MENU_DELEGATE_CC"
+grep -q 'g_last_android_extension_action_web_contents' "$MENU_DELEGATE_CC" || sed -i '/int g_last_android_extension_action_tab_id = -1;/a\
+base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;\
 ' "$MENU_DELEGATE_CC"
 grep -q 'int GetLastAndroidExtensionActionTabId()' "$MENU_DELEGATE_CC" || sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
 int GetLastAndroidExtensionActionTabId() {\
@@ -612,13 +622,23 @@ int GetLastAndroidExtensionActionTabId() {\
 }\
 \
 ' "$MENU_DELEGATE_CC"
+grep -q 'content::WebContents\* GetLastAndroidExtensionActionWebContents()' "$MENU_DELEGATE_CC" || sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
+content::WebContents* GetLastAndroidExtensionActionWebContents() {\
+  return g_last_android_extension_action_web_contents.get();\
+}\
+\
+' "$MENU_DELEGATE_CC"
 grep -q 'void SetLastAndroidExtensionActionWebContents' "$MENU_DELEGATE_CC" || sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
 void SetLastAndroidExtensionActionWebContents(content::WebContents* web_contents) {\
+  g_last_android_extension_action_web_contents =\
+      web_contents ? web_contents->GetWeakPtr()\
+                   : base::WeakPtr<content::WebContents>();\
   g_last_android_extension_action_tab_id =\
       web_contents ? ExtensionTabUtil::GetTabId(web_contents) : -1;\
 }\
 \
 ' "$MENU_DELEGATE_CC"
+grep -q 'web_contents ? web_contents->GetWeakPtr()' "$MENU_DELEGATE_CC" || perl -0pi -e 's|(void SetLastAndroidExtensionActionWebContents\(content::WebContents\* web_contents\) \{\n)|$1  g_last_android_extension_action_web_contents =\n      web_contents ? web_contents->GetWeakPtr()\n                   : base::WeakPtr<content::WebContents>();\n|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id\) \{\n  menu_model_->ExecuteAction\(extension_id\);\n\}|void ExtensionsMenuDelegateAndroid::ExecuteAction(\n    JNIEnv* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents* web_contents) {\n  if (web_contents) {\n    tabs::TabInterface* tab =\n        tabs::TabInterface::MaybeGetFromContents(web_contents);\n    BrowserWindowInterface* action_browser =\n        tab ? tab->GetBrowserWindowInterface() : nullptr;\n    TabListInterface* tab_list =\n        action_browser ? TabListInterface::From(action_browser) : nullptr;\n    extensions::ExtensionRegistry* registry =\n        action_browser\n            ? extensions::ExtensionRegistry::Get(action_browser->GetProfile())\n            : nullptr;\n    if (tab_list \&\& registry \&\&\n        registry->enabled_extensions().Contains(extension_id)) {\n      tab_list->ActivateTab(tab->GetHandle());\n      auto action_model = ExtensionActionViewModel::Create(\n          extension_id, action_browser,\n          std::make_unique<ExtensionActionDelegateAndroid>(\n              action_browser, extension_id, toolbar_android_, java_object_));\n      action_model->ExecuteUserAction(\n          ToolbarActionViewModel::InvocationSource::kMenuEntry);\n      return;\n    }\n  }\n\n  menu_model_->ExecuteAction(extension_id);\n}|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|if \(web_contents\) \{\n    g_last_android_extension_action_tab_id = ExtensionTabUtil::GetTabId\(web_contents\);\n  \}|SetLastAndroidExtensionActionWebContents(web_contents);|g' "$MENU_DELEGATE_CC"
 grep -q 'SetLastAndroidExtensionActionWebContents(web_contents);' "$MENU_DELEGATE_CC" || perl -0pi -e 's|(void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents\* web_contents\) \{\n)|$1  SetLastAndroidExtensionActionWebContents(web_contents);\n|' "$MENU_DELEGATE_CC"
@@ -757,20 +777,21 @@ path.write_text(text)
 PYCODE
 grep -q 'private @Nullable WebContents getCurrentWebContents()' "$ACTION_LIST_MEDIATOR" || sed -i '/private void updateActionPropertiesForAll(WebContents webContents) {/i\
     private @Nullable WebContents getCurrentWebContents() {\
-        Tab suppliedTab = mCurrentTabSupplier.get();\
-        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
-            return suppliedTab.getWebContents();\
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
+        if (incognitoTab != null\
+                && incognitoTab.getWebContents() != null\
+                && (mTabModelSelector.isOffTheRecordModelSelected()\
+                        || incognitoTab.isUserInteractable()\
+                        || incognitoTab.isActivated())) {\
+            return incognitoTab.getWebContents();\
         }\
         Tab currentTab = mTabModelSelector.getCurrentTab();\
         if (currentTab != null && currentTab.getWebContents() != null) {\
             return currentTab.getWebContents();\
         }\
-        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
-        if (incognitoTab != null\
-                && (mTabModelSelector.isOffTheRecordModelSelected()\
-                        || incognitoTab.isUserInteractable()\
-                        || incognitoTab.isActivated())) {\
-            return incognitoTab.getWebContents();\
+        Tab suppliedTab = mCurrentTabSupplier.get();\
+        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
+            return suppliedTab.getWebContents();\
         }\
         return incognitoTab != null ? incognitoTab.getWebContents() : null;\
     }\
@@ -1262,6 +1283,7 @@ text = text.replace(
     '')
 forward_decl = """#if BUILDFLAG(IS_ANDROID)
 int GetLastAndroidExtensionActionTabId();
+content::WebContents* GetLastAndroidExtensionActionWebContents();
 #endif
 
 """
@@ -1270,6 +1292,12 @@ if "int GetLastAndroidExtensionActionTabId();" not in text:
     if namespace_anchor not in text:
         raise SystemExit(f"namespace pattern not found in {path}")
     text = text.replace(namespace_anchor, namespace_anchor + forward_decl, 1)
+elif "content::WebContents* GetLastAndroidExtensionActionWebContents();" not in text:
+    text = text.replace(
+        "int GetLastAndroidExtensionActionTabId();\n",
+        "int GetLastAndroidExtensionActionTabId();\n"
+        "content::WebContents* GetLastAndroidExtensionActionWebContents();\n",
+        1)
 old = """#if BUILDFLAG(IS_ANDROID)
   const bool helium_android_incognito_direct_query =
       query_info_.active && *query_info_.active &&
@@ -1472,6 +1500,35 @@ text = text.replace(
     "if (!contents || !contents->GetBrowserContext()->IsOffTheRecord() ||\\n"
     "          contents->GetVisibility() != content::Visibility::VISIBLE) {")
 robust_if = """  if (helium_android_current_tab_query) {
+    content::WebContents* action_contents =
+        GetLastAndroidExtensionActionWebContents();
+    Profile* calling_profile =
+        Profile::FromBrowserContext(browser_context());
+    Profile* action_profile =
+        action_contents
+            ? Profile::FromBrowserContext(action_contents->GetBrowserContext())
+            : nullptr;
+    if (action_contents && action_profile &&
+        calling_profile->IsSameOrParent(action_profile)) {
+      TabAndroid* android_tab = TabAndroid::FromWebContents(action_contents);
+      bool is_current_tab =
+          android_tab &&
+          (android_tab->IsUserInteractable() || android_tab->IsActivated());
+      base::ListValue direct_result;
+      ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
+          ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
+      base::DictValue tab_value =
+          ExtensionTabUtil::CreateTabObject(action_contents, dont_scrub,
+                                            extension())
+              .ToValue();
+      if (is_current_tab || action_profile->IsOffTheRecord()) {
+        tab_value.Set(tabs_constants::kActiveKey, true);
+        tab_value.Set(tabs_constants::kSelectedKey, true);
+      }
+      direct_result.Append(std::move(tab_value));
+      return RespondNow(WithArguments(std::move(direct_result)));
+    }
+
     for (int pass = 0; pass < 2; ++pass) {
       for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
         TabListInterface* tab_list = TabListInterface::From(browser);
@@ -1605,6 +1662,7 @@ robust_if = """  if (helium_android_current_tab_query) {
         append_tab(tab ? tab->GetContents() : nullptr, tab_list, i);
       }
     }
+    append_tab(GetLastAndroidExtensionActionWebContents(), nullptr, -1);
     int action_tab_id = GetLastAndroidExtensionActionTabId();
     if (action_tab_id >= 0) {
       WindowController* action_window = nullptr;

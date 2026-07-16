@@ -83,7 +83,42 @@ BUILD_PROXY=http://127.0.0.1:7890 NINJA_JOBS=14 ./build.sh
 FAST_LOCAL_BUILD=1 NINJA_JOBS=14 ./build.sh
 ```
 
-`FAST_LOCAL_BUILD=1` 会跳过源码准备、系统依赖安装和 `patch.sh`。如果修改了补丁脚本，应先对现有源码执行：
+`FAST_LOCAL_BUILD=1` 会跳过源码准备、系统依赖安装和 `patch.sh`。因此每次拉取到新的 Helium 补丁后，应先运行 `hotfix_existing_src.sh`。
+
+一直使用的代理更新和 Localbuild 完整流程如下：
+
+```bash
+cd /root/android-helium-browser
+
+git -c http.proxy=http://192.168.2.1:37896 pull --ff-only origin main
+git submodule sync --recursive
+git -c http.proxy=http://192.168.2.1:37896 \
+    submodule update --init --recursive --jobs 8
+
+./hotfix_existing_src.sh chromium/src
+
+FAST_LOCAL_BUILD=1 \
+BUILD_PROXY=http://192.168.2.1:37896 \
+BUILD_ARM=0 \
+BUILD_ARM64=1 \
+BUILD_AAB=0 \
+NINJA_JOBS=14 \
+./build.sh
+```
+
+执行 Localbuild 前必须确认仓库要求的 Chromium 版本与现有源码版本一致：
+
+```bash
+grep android_default_version_name vanadium/args.gn
+awk -F= '
+    /^(MAJOR|MINOR|BUILD|PATCH)=/ { value[$1] = $2 }
+    END { print value["MAJOR"] "." value["MINOR"] "." value["BUILD"] "." value["PATCH"] }
+' chromium/src/chrome/VERSION
+```
+
+两边都应显示 `150.0.7871.124`。`hotfix_existing_src.sh` 负责把新的下游补丁应用到已有源码，但不会把 Chromium `150.0.7871.63` 升级成 `150.0.7871.124`。版本不一致时必须执行完整构建，让 `build.sh` 重新获取目标 Chromium 标签并应用 Vanadium 补丁。
+
+如果只修改了本地补丁脚本，也可以单独执行：
 
 ```bash
 ./hotfix_existing_src.sh chromium/src
