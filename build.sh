@@ -75,7 +75,7 @@ configure_network_env
 
 if [ "$SKIP_SYSTEM_DEPS" != "1" ]; then
     sudo apt-get update
-    sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick ccache zstd bzip2 openjdk-17-jre-headless
+    sudo apt-get install -y sudo lsb-release file nano git curl python3 python3-pillow imagemagick librsvg2-bin ccache zstd bzip2 openjdk-17-jre-headless
 fi
 set_keys
 git config --global user.name "Helium CI"
