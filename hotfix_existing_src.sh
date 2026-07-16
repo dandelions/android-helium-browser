@@ -1597,17 +1597,19 @@ text = text.replace(
     "if (!contents || !contents->GetBrowserContext()->IsOffTheRecord() ||\\n"
     "          contents->GetVisibility() != content::Visibility::VISIBLE) {")
 robust_if = """  if (helium_android_current_tab_query) {
-    content::WebContents* action_contents =
+    content::WebContents* last_action_contents =
         GetLastAndroidExtensionActionWebContents();
     Profile* calling_profile =
         Profile::FromBrowserContext(browser_context());
     Profile* action_profile =
-        action_contents
-            ? Profile::FromBrowserContext(action_contents->GetBrowserContext())
+        last_action_contents
+            ? Profile::FromBrowserContext(
+                  last_action_contents->GetBrowserContext())
             : nullptr;
-    if (action_contents && action_profile &&
+    if (last_action_contents && action_profile &&
         calling_profile->IsSameOrParent(action_profile)) {
-      TabAndroid* android_tab = TabAndroid::FromWebContents(action_contents);
+      TabAndroid* android_tab =
+          TabAndroid::FromWebContents(last_action_contents);
       bool is_current_tab =
           android_tab &&
           (android_tab->IsUserInteractable() || android_tab->IsActivated());
@@ -1615,7 +1617,7 @@ robust_if = """  if (helium_android_current_tab_query) {
       ExtensionTabUtil::ScrubTabBehavior dont_scrub = {
           ExtensionTabUtil::kDontScrubTab, ExtensionTabUtil::kDontScrubTab};
       base::DictValue tab_value =
-          ExtensionTabUtil::CreateTabObject(action_contents, dont_scrub,
+          ExtensionTabUtil::CreateTabObject(last_action_contents, dont_scrub,
                                             extension())
               .ToValue();
       if (is_current_tab || action_profile->IsOffTheRecord()) {
