@@ -999,6 +999,32 @@ grep -q 'SetActiveWebContents' "$TOOLBAR_ANDROID_H" || \
     perl -0pi -e 's|(  void ExecuteUserAction\(const ToolbarActionsModel::ActionId& action_id,\n                         ToolbarActionViewModel::InvocationSource source\);\n)|  void SetActiveWebContents(JNIEnv* env, content::WebContents* web_contents);\n$1|' "$TOOLBAR_ANDROID_H"
 grep -q 'extensions_menu_delegate_android.h' "$TOOLBAR_ANDROID_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/ui/android/extensions/extensions_menu_delegate_android.h"' "$TOOLBAR_ANDROID_CC"
+python3 - "$TOOLBAR_ANDROID_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "void ExtensionsToolbarAndroid::OnActiveWebContentsChanged("
+start = text.find(marker)
+if start < 0:
+    raise SystemExit(f"OnActiveWebContentsChanged not found in {path}")
+brace = text.find("{", start)
+if brace < 0:
+    raise SystemExit(f"OnActiveWebContentsChanged body not found in {path}")
+body_end = text.find("\n}", brace)
+if body_end < 0:
+    raise SystemExit(f"OnActiveWebContentsChanged end not found in {path}")
+setter = "  SetLastAndroidExtensionActionWebContents(web_contents);\n"
+if setter not in text[brace:body_end]:
+    text = text[:brace + 2] + setter + text[brace + 2:]
+path.write_text(text)
+PYCODE
+if ! grep -q 'SetLastAndroidExtensionActionWebContents(web_contents);' "$TOOLBAR_ANDROID_CC"; then
+    echo "Active WebContents tracking was not applied: $SRC_DIR/$TOOLBAR_ANDROID_CC" >&2
+    exit 1
+fi
+echo "Verified active WebContents tracking in $SRC_DIR/$TOOLBAR_ANDROID_CC"
 grep -q 'ExtensionsToolbarAndroid::SetActiveWebContents' "$TOOLBAR_ANDROID_CC" || \
     sed -i '/void ExtensionsToolbarAndroid::ExecuteUserAction(/i\
 void ExtensionsToolbarAndroid::SetActiveWebContents(\
