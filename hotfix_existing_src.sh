@@ -764,6 +764,12 @@ perl -0pi -e 's|std::vector<base::android::ScopedJavaLocalRef<jobject>> GetMenuE
 
 grep -q 'chrome/browser/extensions/extension_tab_util.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/extensions/extension_tab_util.h"' "$MENU_DELEGATE_CC"
+grep -q 'chrome/browser/android/tab_android.h' "$MENU_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/android/tab_android.h"' "$MENU_DELEGATE_CC"
+grep -q 'chrome/browser/ui/android/tab_model/tab_model.h' "$MENU_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/ui/android/tab_model/tab_model.h"' "$MENU_DELEGATE_CC"
+grep -q 'chrome/browser/ui/android/tab_model/tab_model_list.h' "$MENU_DELEGATE_CC" || \
+    sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/ui/android/tab_model/tab_model_list.h"' "$MENU_DELEGATE_CC"
 grep -q 'chrome/browser/tab_list/tab_list_interface.h' "$MENU_DELEGATE_CC" || \
     sed -i '/#include "chrome\/browser\/ui\/android\/extensions\/extension_action_delegate_android.h"/a\#include "chrome/browser/tab_list/tab_list_interface.h"' "$MENU_DELEGATE_CC"
 grep -q 'chrome/browser/ui/toolbar/toolbar_action_view_model.h' "$MENU_DELEGATE_CC" || \
@@ -803,7 +809,23 @@ int GetLastAndroidExtensionActionTabId() {\
 grep -q 'content::WebContents\* GetLastAndroidExtensionActionWebContents()' "$MENU_DELEGATE_CC" || \
     sed -i '/using PermissionsManager = extensions::PermissionsManager;/a\
 content::WebContents* GetLastAndroidExtensionActionWebContents() {\
-  return GetLastAndroidExtensionActionWebContentsStorage().get();\
+  content::WebContents* cached_contents =\
+      GetLastAndroidExtensionActionWebContentsStorage().get();\
+  for (TabModel* tab_model : TabModelList::models()) {\
+    if (!tab_model || !tab_model->IsOffTheRecord()) {\
+      continue;\
+    }\
+    content::WebContents* contents = tab_model->GetActiveWebContents();\
+    if (!contents) {\
+      continue;\
+    }\
+    TabAndroid* tab = TabAndroid::FromWebContents(contents);\
+    if ((tab && (tab->IsUserInteractable() || tab->IsActivated())) ||\
+        contents == cached_contents) {\
+      return contents;\
+    }\
+  }\
+  return cached_contents;\
 }\
 \
 ' "$MENU_DELEGATE_CC"
@@ -821,14 +843,64 @@ void SetLastAndroidExtensionActionWebContents(content::WebContents* web_contents
 grep -q 'web_contents ? web_contents->GetWeakPtr()' "$MENU_DELEGATE_CC" || \
     perl -0pi -e 's|(void SetLastAndroidExtensionActionWebContents\(content::WebContents\* web_contents\) \{\n)|$1  GetLastAndroidExtensionActionWebContentsStorage() =\n      web_contents ? web_contents->GetWeakPtr()\n                   : base::WeakPtr<content::WebContents>();\n|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|base::WeakPtr<content::WebContents> g_last_android_extension_action_web_contents;|base::WeakPtr<content::WebContents>\&\nGetLastAndroidExtensionActionWebContentsStorage() {\n  static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;\n  return *storage;\n}|g; s|base::NoDestructor<base::WeakPtr<content::WebContents>>\n    g_last_android_extension_action_web_contents;|base::WeakPtr<content::WebContents>\&\nGetLastAndroidExtensionActionWebContentsStorage() {\n  static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;\n  return *storage;\n}|g; s|return g_last_android_extension_action_web_contents\.get\(\);|return GetLastAndroidExtensionActionWebContentsStorage().get();|g; s|return g_last_android_extension_action_web_contents->get\(\);|return GetLastAndroidExtensionActionWebContentsStorage().get();|g; s|(?m)^\s*\*?g_last_android_extension_action_web_contents =|  GetLastAndroidExtensionActionWebContentsStorage() =|g' "$MENU_DELEGATE_CC"
+python3 - "$MENU_DELEGATE_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+marker = "content::WebContents* GetLastAndroidExtensionActionWebContents() {"
+start = text.find(marker)
+if start < 0:
+    raise SystemExit(f"action WebContents getter not found in {path}")
+brace = text.find("{", start)
+depth = 0
+end = None
+for idx in range(brace, len(text)):
+    if text[idx] == "{":
+        depth += 1
+    elif text[idx] == "}":
+        depth -= 1
+        if depth == 0:
+            end = idx + 1
+            break
+if end is None:
+    raise SystemExit(f"action WebContents getter end not found in {path}")
+replacement = """content::WebContents* GetLastAndroidExtensionActionWebContents() {
+  content::WebContents* cached_contents =
+      GetLastAndroidExtensionActionWebContentsStorage().get();
+  for (TabModel* tab_model : TabModelList::models()) {
+    if (!tab_model || !tab_model->IsOffTheRecord()) {
+      continue;
+    }
+    content::WebContents* contents = tab_model->GetActiveWebContents();
+    if (!contents) {
+      continue;
+    }
+    TabAndroid* tab = TabAndroid::FromWebContents(contents);
+    if ((tab && (tab->IsUserInteractable() || tab->IsActivated())) ||
+        contents == cached_contents) {
+      return contents;
+    }
+  }
+  return cached_contents;
+}"""
+text = text[:start] + replacement + text[end:]
+path.write_text(text)
+PYCODE
 if ! grep -q 'GetLastAndroidExtensionActionWebContentsStorage()' "$MENU_DELEGATE_CC" || \
    ! grep -q 'static base::NoDestructor<base::WeakPtr<content::WebContents>> storage;' "$MENU_DELEGATE_CC" || \
-   ! grep -q 'return GetLastAndroidExtensionActionWebContentsStorage().get();' "$MENU_DELEGATE_CC" || \
+   ! grep -q 'GetLastAndroidExtensionActionWebContentsStorage().get();' "$MENU_DELEGATE_CC" || \
    ! grep -q 'GetLastAndroidExtensionActionWebContentsStorage() =' "$MENU_DELEGATE_CC" || \
    grep -q 'g_last_android_extension_action_web_contents' "$MENU_DELEGATE_CC"; then
     echo "Android extension action WebContents storage migration failed: $SRC_DIR/$MENU_DELEGATE_CC" >&2
     exit 1
 fi
+if ! grep -q 'for (TabModel\* tab_model : TabModelList::models())' "$MENU_DELEGATE_CC"; then
+    echo "Android OTR tab model lookup was not applied: $SRC_DIR/$MENU_DELEGATE_CC" >&2
+    exit 1
+fi
+echo "Verified Android OTR tab model lookup in $SRC_DIR/$MENU_DELEGATE_CC"
 echo "Verified no-destructor Android extension action storage in $SRC_DIR/$MENU_DELEGATE_CC"
 perl -0pi -e 's|void ExtensionsMenuDelegateAndroid::ExecuteAction\(\n    JNIEnv\* env,\n    const extensions::ExtensionId& extension_id\) \{\n  menu_model_->ExecuteAction\(extension_id\);\n\}|void ExtensionsMenuDelegateAndroid::ExecuteAction(\n    JNIEnv* env,\n    const extensions::ExtensionId& extension_id,\n    content::WebContents* web_contents) {\n  if (web_contents) {\n    tabs::TabInterface* tab =\n        tabs::TabInterface::MaybeGetFromContents(web_contents);\n    BrowserWindowInterface* action_browser =\n        tab ? tab->GetBrowserWindowInterface() : nullptr;\n    TabListInterface* tab_list =\n        action_browser ? TabListInterface::From(action_browser) : nullptr;\n    extensions::ExtensionRegistry* registry =\n        action_browser\n            ? extensions::ExtensionRegistry::Get(action_browser->GetProfile())\n            : nullptr;\n    if (tab_list \&\& registry \&\&\n        registry->enabled_extensions().Contains(extension_id)) {\n      tab_list->ActivateTab(tab->GetHandle());\n      auto action_model = ExtensionActionViewModel::Create(\n          extension_id, action_browser,\n          std::make_unique<ExtensionActionDelegateAndroid>(\n              action_browser, extension_id, toolbar_android_, java_object_));\n      action_model->ExecuteUserAction(\n          ToolbarActionViewModel::InvocationSource::kMenuEntry);\n      return;\n    }\n  }\n\n  menu_model_->ExecuteAction(extension_id);\n}|' "$MENU_DELEGATE_CC"
 perl -0pi -e 's|if \(web_contents\) \{\n    g_last_android_extension_action_tab_id = ExtensionTabUtil::GetTabId\(web_contents\);\n  \}|SetLastAndroidExtensionActionWebContents(web_contents);|g' "$MENU_DELEGATE_CC"
@@ -876,6 +948,14 @@ get_action_icon = """ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::
     JNIEnv* env,
     int action_index,
     content::WebContents* web_contents) {
+  if (content::WebContents* active_contents =
+          GetLastAndroidExtensionActionWebContents()) {
+    Profile* active_profile =
+        Profile::FromBrowserContext(active_contents->GetBrowserContext());
+    if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
+      web_contents = active_contents;
+    }
+  }
   const auto& action_models = menu_model_->action_models();
   CHECK_GE(action_index, 0);
   CHECK_LT(static_cast<size_t>(action_index), action_models.size());
@@ -895,6 +975,14 @@ get_menu_entry = """ScopedJavaLocalRef<jobject> ExtensionsMenuDelegateAndroid::G
     JNIEnv* env,
     int action_index,
     content::WebContents* web_contents) {
+  if (content::WebContents* active_contents =
+          GetLastAndroidExtensionActionWebContents()) {
+    Profile* active_profile =
+        Profile::FromBrowserContext(active_contents->GetBrowserContext());
+    if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
+      web_contents = active_contents;
+    }
+  }
   const auto& action_models = menu_model_->action_models();
   CHECK_GE(action_index, 0);
   CHECK_LT(static_cast<size_t>(action_index), action_models.size());
@@ -1020,10 +1108,56 @@ if setter not in text[brace:body_end]:
     text = text[:brace + 2] + setter + text[brace + 2:]
 path.write_text(text)
 PYCODE
+python3 - "$TOOLBAR_ANDROID_CC" <<'PYCODE'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+resolver = """  if (content::WebContents* active_contents =
+          GetLastAndroidExtensionActionWebContents()) {
+    Profile* active_profile =
+        Profile::FromBrowserContext(active_contents->GetBrowserContext());
+    if (browser_->GetProfile()->IsSameOrParent(active_profile)) {
+      web_contents = active_contents;
+    }
+  }
+"""
+
+for name in ("GetAction", "GetIcon"):
+    marker = f"ExtensionsToolbarAndroid::{name}("
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit(f"{name} not found in {path}")
+    brace = text.find("{", start)
+    if brace < 0:
+        raise SystemExit(f"{name} body not found in {path}")
+    depth = 0
+    end = None
+    for idx in range(brace, len(text)):
+        if text[idx] == "{":
+            depth += 1
+        elif text[idx] == "}":
+            depth -= 1
+            if depth == 0:
+                end = idx + 1
+                break
+    if end is None:
+        raise SystemExit(f"{name} end not found in {path}")
+    if "GetLastAndroidExtensionActionWebContents()" not in text[brace:end]:
+        text = text[:brace + 2] + resolver + text[brace + 2:]
+
+path.write_text(text)
+PYCODE
 if ! grep -q 'SetLastAndroidExtensionActionWebContents(web_contents);' "$TOOLBAR_ANDROID_CC"; then
     echo "Active WebContents tracking was not applied: $SRC_DIR/$TOOLBAR_ANDROID_CC" >&2
     exit 1
 fi
+if [ "$(grep -c 'GetLastAndroidExtensionActionWebContents()' "$TOOLBAR_ANDROID_CC")" -lt 2 ]; then
+    echo "Android toolbar action WebContents resolver was not applied: $SRC_DIR/$TOOLBAR_ANDROID_CC" >&2
+    exit 1
+fi
+echo "Verified Android toolbar action WebContents resolver in $SRC_DIR/$TOOLBAR_ANDROID_CC"
 echo "Verified active WebContents tracking in $SRC_DIR/$TOOLBAR_ANDROID_CC"
 grep -q 'ExtensionsToolbarAndroid::SetActiveWebContents' "$TOOLBAR_ANDROID_CC" || \
     sed -i '/void ExtensionsToolbarAndroid::ExecuteUserAction(/i\
