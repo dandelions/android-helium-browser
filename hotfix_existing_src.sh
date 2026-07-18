@@ -160,9 +160,25 @@ grep -q 'extension_path_.IsVirtualDocumentPath()' "$UNPACKED_INSTALLER" || \
 grep -q 'String fastId = mRelativePath' "$VIRTUAL_DOCUMENT_PATH" || \
     sed -i 's|assert treeId.equals(documentId);|&\n if ("com.android.externalstorage.documents".equals(mAuthority)) { String fastId = mRelativePath.isEmpty() ? treeId : (treeId.endsWith(":") ? treeId + mRelativePath : treeId + "/" + mRelativePath); Uri fast = DocumentsContract.buildDocumentUriUsingTree(tree, fastId); return contentUriExists(fast) ? fast : null; }|' "$VIRTUAL_DOCUMENT_PATH"
 
-# Keep address entry at the bottom. The omnibox dropdown embedder already
-# places suggestions above the toolbar whenever the controls position is bottom.
-if ! grep -q 'Helium: keep the focused omnibox at the bottom' "$TOOLBAR_POSITION_CONTROLLER"; then
+# On the NTP and while editing, follow the user's toolbar preference. Chromium's
+# dropdown embedder places history and suggestions above a bottom toolbar.
+if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing' "$TOOLBAR_POSITION_CONTROLLER"; then
+    perl -0pi -e 's~        // Helium: keep the focused omnibox at the bottom\.
+        if \(isOmniboxFocused\) \{
+            newControlsPosition = ControlsPosition\.BOTTOM;
+        \} else if \(ntpShowing
+                \|\| tabSwitcherShowing
+                \|\| isFindInPageShowing
+                \|\| doesUserPreferTopToolbar\) \{
+            newControlsPosition = ControlsPosition\.TOP;
+        \} else \{
+            newControlsPosition = ControlsPosition\.BOTTOM;
+        \}~        // Helium: follow the toolbar preference on the NTP and while editing.
+        if (tabSwitcherShowing || isFindInPageShowing || doesUserPreferTopToolbar) {
+            newControlsPosition = ControlsPosition.TOP;
+        } else {
+            newControlsPosition = ControlsPosition.BOTTOM;
+        }~' "$TOOLBAR_POSITION_CONTROLLER"
     perl -0pi -e 's~        if \(ntpShowing
                 \|\| tabSwitcherShowing
                 \|\| isOmniboxFocused
@@ -171,20 +187,15 @@ if ! grep -q 'Helium: keep the focused omnibox at the bottom' "$TOOLBAR_POSITION
             newControlsPosition = ControlsPosition\.TOP;
         \} else \{
             newControlsPosition = ControlsPosition\.BOTTOM;
-        \}~        // Helium: keep the focused omnibox at the bottom.
-        if (isOmniboxFocused) {
-            newControlsPosition = ControlsPosition.BOTTOM;
-        } else if (ntpShowing
-                || tabSwitcherShowing
-                || isFindInPageShowing
-                || doesUserPreferTopToolbar) {
+        \}~        // Helium: follow the toolbar preference on the NTP and while editing.
+        if (tabSwitcherShowing || isFindInPageShowing || doesUserPreferTopToolbar) {
             newControlsPosition = ControlsPosition.TOP;
         } else {
             newControlsPosition = ControlsPosition.BOTTOM;
         }~' "$TOOLBAR_POSITION_CONTROLLER"
 fi
-if ! grep -q 'Helium: keep the focused omnibox at the bottom' "$TOOLBAR_POSITION_CONTROLLER"; then
-    echo "Focused omnibox position patch did not apply: $SRC_DIR/$TOOLBAR_POSITION_CONTROLLER" >&2
+if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing' "$TOOLBAR_POSITION_CONTROLLER"; then
+    echo "NTP and omnibox toolbar position patch did not apply: $SRC_DIR/$TOOLBAR_POSITION_CONTROLLER" >&2
     exit 1
 fi
 
