@@ -124,8 +124,8 @@ if [ -z "$TARGET_VERSION" ] || [ "$CHROMIUM_VERSION" != "$TARGET_VERSION" ]; the
 fi
 echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
 
-# Keep the standard 48dp touch target, but render the close glyph at 50% size.
-perl -0pi -e 's|(android:id="\@\+id/extensions_menu_close_button"(?:(?!/>).)*?android:src="\@drawable/ic_close"\n)(?!        android:padding="12dp"\n)|$1        android:padding="12dp"\n|s' "$EXTENSIONS_MENU_HEADER"
+# The toolbar icon toggles the menu, so the duplicate close button is not needed.
+perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/extensions_menu_close_button"\n)(?!        android:visibility="gone"\n)|$1        android:visibility="gone"\n|' "$EXTENSIONS_MENU_HEADER"
 
 # Titanium v150.0.7871.124 compatibility fixes adapted to the Helium-renamed
 # Vanadium source tree. Every insertion is guarded because this script is
@@ -413,6 +413,8 @@ perl -0pi -e 's|void ExtensionActionDelegateAndroid::ShowContextMenuAsFallback\(
 
 # Menu action popups should be anchored to the clicked menu row, not by
 # temporarily popping the extension action into the toolbar.
+# Treat the toolbar extensions icon as a menu toggle.
+perl -0pi -e 's|(mExtensionsMenuButton\.setOnClickListener\(\n                \(view\) -> \{\n)(?!                    if \(mMediator != null\))|$1                    if (mMediator != null) {\n                        mExtensionsMenuButton.dismiss();\n                        destroyMediator();\n                        mExtensionModels.clear();\n                        return;\n                    }\n|' "$MENU_COORDINATOR"
 perl -0pi -e 's|if \(hasPoppedOutAction\(\)\) \{\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        \} else \{\n            mCanShowPoppedOutAction = false;\n            return 0;\n        \}|if (hasPoppedOutAction() && itemWidth <= availableWidth) {\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        } else {\n            mCanShowPoppedOutAction = false;\n            return 0;\n        }|' "$ACTION_LIST_MEDIATOR"
 perl -0pi -e 's|if \(findIndexForId\(actionId\) == -1\) \{\n            mPoppedOutActionId = actionId;\n            mCanShowPoppedOutAction = true;\n            reconcileActionItems\(\);\n        \}|if (findIndexForId(actionId) == -1) {\n            mPoppedOutActionId = actionId;\n        }|' "$ACTION_LIST_MEDIATOR"
 grep -q 'org.chromium.chrome.browser.tabmodel.TabModelSelector' "$MENU_COORDINATOR" || \

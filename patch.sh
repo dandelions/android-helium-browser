@@ -56,8 +56,8 @@ grep -q 'tab_list->ActivateTab(tab->GetHandle())' chrome/browser/devtools/devtoo
 
 # ext: app menu
 sed -i 's|return ExtensionUi.isEnabled(getProfileFromTabModel());|return true;|' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-# Keep the standard 48dp touch target, but render the close glyph at 50% size.
-perl -0pi -e 's|(android:id="\@\+id/extensions_menu_close_button"(?:(?!/>).)*?android:src="\@drawable/ic_close"\n)(?!        android:padding="12dp"\n)|$1        android:padding="12dp"\n|s' chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_header.xml
+# The toolbar icon toggles the menu, so the duplicate close button is not needed.
+perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/extensions_menu_close_button"\n)(?!        android:visibility="gone"\n)|$1        android:visibility="gone"\n|' chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_header.xml
 sed -i '/coordinator.showExtensionsMenu();/c\            if (coordinator != null) {\
                 coordinator.showExtensionsMenu();\
             } else {\
@@ -143,6 +143,8 @@ TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 TABS_EVENT_ROUTER_CC=chrome/browser/extensions/api/tabs/tabs_event_router.cc
 CHROME_EXTENSIONS_BROWSER_CLIENT=chrome/browser/extensions/chrome_extensions_browser_client.cc
 EXTENSION_TAB_UTIL_CC=chrome/browser/extensions/extension_tab_util.cc
+# Treat the toolbar extensions icon as a menu toggle.
+perl -0pi -e 's|(mExtensionsMenuButton\.setOnClickListener\(\n                \(view\) -> \{\n)(?!                    if \(mMediator != null\))|$1                    if (mMediator != null) {\n                        mExtensionsMenuButton.dismiss();\n                        destroyMediator();\n                        mExtensionModels.clear();\n                        return;\n                    }\n|' "$MENU_COORDINATOR"
 perl -0pi -e 's|if \(hasPoppedOutAction\(\)\) \{\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        \} else \{\n            mCanShowPoppedOutAction = false;\n            return 0;\n        \}|if (hasPoppedOutAction() && itemWidth <= availableWidth) {\n            mCanShowPoppedOutAction = true;\n            return itemWidth;\n        } else {\n            mCanShowPoppedOutAction = false;\n            return 0;\n        }|' "$ACTION_LIST_MEDIATOR"
 perl -0pi -e 's|if \(findIndexForId\(actionId\) == -1\) \{\n            mPoppedOutActionId = actionId;\n            mCanShowPoppedOutAction = true;\n            reconcileActionItems\(\);\n        \}|if (findIndexForId(actionId) == -1) {\n            mPoppedOutActionId = actionId;\n        }|' "$ACTION_LIST_MEDIATOR"
 grep -q 'org.chromium.chrome.browser.tabmodel.TabModelSelector' "$MENU_COORDINATOR" || sed -i '/import org.chromium.chrome.browser.tabmodel.TabCreator;/a\import org.chromium.chrome.browser.tabmodel.TabModelSelector;' "$MENU_COORDINATOR"
