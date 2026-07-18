@@ -97,8 +97,9 @@ SWIPE_REFRESH_HANDLER=chrome/android/java/src/org/chromium/chrome/browser/SwipeR
 INCOGNITO_BACK_HANDLER=chrome/browser/back_press/android/java/src/org/chromium/chrome/browser/back_press/MinimizeAppAndCloseTabBackPressHandler.java
 CHROME_VERSION_FILE=chrome/VERSION
 EXTENSIONS_MENU_HEADER=chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_header.xml
+TOOLBAR_POSITION_CONTROLLER=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -158,6 +159,34 @@ grep -q 'extension_path_.IsVirtualDocumentPath()' "$UNPACKED_INSTALLER" || \
 
 grep -q 'String fastId = mRelativePath' "$VIRTUAL_DOCUMENT_PATH" || \
     sed -i 's|assert treeId.equals(documentId);|&\n if ("com.android.externalstorage.documents".equals(mAuthority)) { String fastId = mRelativePath.isEmpty() ? treeId : (treeId.endsWith(":") ? treeId + mRelativePath : treeId + "/" + mRelativePath); Uri fast = DocumentsContract.buildDocumentUriUsingTree(tree, fastId); return contentUriExists(fast) ? fast : null; }|' "$VIRTUAL_DOCUMENT_PATH"
+
+# Keep address entry at the bottom. The omnibox dropdown embedder already
+# places suggestions above the toolbar whenever the controls position is bottom.
+if ! grep -q 'Helium: keep the focused omnibox at the bottom' "$TOOLBAR_POSITION_CONTROLLER"; then
+    perl -0pi -e 's~        if \(ntpShowing
+                \|\| tabSwitcherShowing
+                \|\| isOmniboxFocused
+                \|\| isFindInPageShowing
+                \|\| doesUserPreferTopToolbar\) \{
+            newControlsPosition = ControlsPosition\.TOP;
+        \} else \{
+            newControlsPosition = ControlsPosition\.BOTTOM;
+        \}~        // Helium: keep the focused omnibox at the bottom.
+        if (isOmniboxFocused) {
+            newControlsPosition = ControlsPosition.BOTTOM;
+        } else if (ntpShowing
+                || tabSwitcherShowing
+                || isFindInPageShowing
+                || doesUserPreferTopToolbar) {
+            newControlsPosition = ControlsPosition.TOP;
+        } else {
+            newControlsPosition = ControlsPosition.BOTTOM;
+        }~' "$TOOLBAR_POSITION_CONTROLLER"
+fi
+if ! grep -q 'Helium: keep the focused omnibox at the bottom' "$TOOLBAR_POSITION_CONTROLLER"; then
+    echo "Focused omnibox position patch did not apply: $SRC_DIR/$TOOLBAR_POSITION_CONTROLLER" >&2
+    exit 1
+fi
 
 if version_lt "$CHROMIUM_VERSION" "151.0.7922.0"; then
     sed -i 's|if (mContainerView != null) mSwipeRefreshLayout.setEnabled(true);|if (mTab.getContentView() != null) mSwipeRefreshLayout.setEnabled(true);|' "$SWIPE_REFRESH_HANDLER"
