@@ -219,6 +219,12 @@ def replace_if_missing(path, marker, old, new):
     path.write_text(text.replace(old, new, 1))
 
 
+def replace_if_present(path, old, new):
+    text = path.read_text()
+    if old in text:
+        path.write_text(text.replace(old, new, 1))
+
+
 ntp = Path(sys.argv[1])
 coordinator = Path(sys.argv[2])
 dropdown = Path(sys.argv[3])
@@ -353,12 +359,8 @@ replace_if_missing(
         private boolean mAlignToBottom;
 """,
 )
-replace_if_missing(
+replace_if_present(
     dropdown,
-    "// Helium: keep short bottom-omnibox suggestion lists next to the omnibox.",
-    """            super.onLayoutChildren(recycler, state);
-        }
-""",
     """            super.onLayoutChildren(recycler, state);
             // Helium: keep short bottom-omnibox suggestion lists next to the omnibox.
             if (mAlignToBottom && state.getItemCount() > 0) {
@@ -371,16 +373,36 @@ replace_if_missing(
             }
         }
 """,
+    """            super.onLayoutChildren(recycler, state);
+        }
+""",
+)
+replace_if_present(
+    dropdown,
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            requestLayout();
+        }
+""",
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            setReverseLayout(alignToBottom);
+            requestLayout();
+        }
+""",
 )
 replace_if_missing(
     dropdown,
-    "void setAlignToBottom(boolean alignToBottom)",
+    "setReverseLayout(alignToBottom);",
     """        /**
          * Reset the internal scroll tracker. This needs to be called either when the
 """,
     """        void setAlignToBottom(boolean alignToBottom) {
             if (mAlignToBottom == alignToBottom) return;
             mAlignToBottom = alignToBottom;
+            setReverseLayout(alignToBottom);
             requestLayout();
         }
 
