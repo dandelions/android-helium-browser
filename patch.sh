@@ -56,6 +56,8 @@ grep -q 'tab_list->ActivateTab(tab->GetHandle())' chrome/browser/devtools/devtoo
 
 # ext: app menu
 sed -i 's|return ExtensionUi.isEnabled(getProfileFromTabModel());|return true;|' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+# Keep the standard 48dp touch target, but render the close glyph at 50% size.
+perl -0pi -e 's|(android:id="\@\+id/extensions_menu_close_button"(?:(?!/>).)*?android:src="\@drawable/ic_close"\n)(?!        android:padding="12dp"\n)|$1        android:padding="12dp"\n|s' chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_header.xml
 sed -i '/coordinator.showExtensionsMenu();/c\            if (coordinator != null) {\
                 coordinator.showExtensionsMenu();\
             } else {\
