@@ -98,8 +98,12 @@ INCOGNITO_BACK_HANDLER=chrome/browser/back_press/android/java/src/org/chromium/c
 CHROME_VERSION_FILE=chrome/VERSION
 EXTENSIONS_MENU_HEADER=chrome/browser/ui/android/extensions/java/res/layout/extensions_menu_header.xml
 TOOLBAR_POSITION_CONTROLLER=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarPositionController.java
+NEW_TAB_PAGE=chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
+NEW_TAB_PAGE_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java
+OMNIBOX_SUGGESTIONS_DROPDOWN=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdown.java
+OMNIBOX_SUGGESTIONS_CONTAINER=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsContainer.java
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -198,6 +202,204 @@ if ! grep -q 'Helium: follow the toolbar preference on the NTP and while editing
     echo "NTP and omnibox toolbar position patch did not apply: $SRC_DIR/$TOOLBAR_POSITION_CONTROLLER" >&2
     exit 1
 fi
+
+# In bottom-toolbar mode, use the real omnibox on the NTP instead of leaving a
+# second fake search box at the top. Keep short suggestion lists adjacent to it.
+python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" <<'PYCODE'
+from pathlib import Path
+import sys
+
+
+def replace_if_missing(path, marker, old, new):
+    text = path.read_text()
+    if marker in text:
+        return
+    if old not in text:
+        raise SystemExit(f"NTP bottom toolbar pattern not found in {path}: {marker}")
+    path.write_text(text.replace(old, new, 1))
+
+
+ntp = Path(sys.argv[1])
+coordinator = Path(sys.argv[2])
+dropdown = Path(sys.argv[3])
+container = Path(sys.argv[4])
+
+replace_if_missing(
+    ntp,
+    "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;",
+    "import org.chromium.chrome.browser.toolbar.top.Toolbar;\n",
+    "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;\n"
+    "import org.chromium.chrome.browser.toolbar.top.Toolbar;\n",
+)
+replace_if_missing(
+    ntp,
+    "&& AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+    """            return isInSingleUrlBarMode() && !mNewTabPageCoordinator.urlFocusAnimationsDisabled();
+""",
+    """            return isInSingleUrlBarMode()
+                    && AddressBarPreference.isToolbarConfiguredToShowOnTop()
+                    && !mNewTabPageCoordinator.urlFocusAnimationsDisabled();
+""",
+)
+
+replace_if_missing(
+    coordinator,
+    "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;",
+    "import org.chromium.chrome.browser.tasks.ReturnToChromeUtil;\n",
+    "import org.chromium.chrome.browser.tasks.ReturnToChromeUtil;\n"
+    "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;\n",
+)
+replace_if_missing(
+    coordinator,
+    "private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;",
+    "    private @Nullable Boolean mIsWhiteBackgroundOnSearchBoxApplied;\n",
+    "    private @Nullable Boolean mIsWhiteBackgroundOnSearchBoxApplied;\n"
+    "    private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;\n"
+    "    private int mToolbarPositionTopInset = Integer.MIN_VALUE;\n",
+)
+replace_if_missing(
+    coordinator,
+    "mModel.set(NewTabPageLayoutProperties.SEARCH_BOX_VIEW, mNtpSearchBox.getView());\n"
+    "        updateSearchBoxVisibilityForToolbarPosition();",
+    "        mModel.set(NewTabPageLayoutProperties.SEARCH_BOX_VIEW, mNtpSearchBox.getView());\n",
+    "        mModel.set(NewTabPageLayoutProperties.SEARCH_BOX_VIEW, mNtpSearchBox.getView());\n"
+    "        updateSearchBoxVisibilityForToolbarPosition();\n",
+)
+replace_if_missing(
+    coordinator,
+    "private void updateSearchBoxVisibilityForToolbarPosition()",
+    """    /**
+     * @return The fake search box view.
+     */
+""",
+    """    // Helium: the real omnibox is the NTP search entry when the toolbar is at the bottom.
+    private void updateSearchBoxVisibilityForToolbarPosition() {
+        boolean showFakeSearchBox =
+                mIsTablet || AddressBarPreference.isToolbarConfiguredToShowOnTop();
+        if (mShowFakeSearchBoxForToolbarPosition != null
+                && mShowFakeSearchBoxForToolbarPosition == showFakeSearchBox
+                && mToolbarPositionTopInset == mTopInset) {
+            return;
+        }
+        mShowFakeSearchBoxForToolbarPosition = showFakeSearchBox;
+        mToolbarPositionTopInset = mTopInset;
+        if (mNtpSearchBox != null) {
+            mNtpSearchBox
+                    .getView()
+                    .setVisibility(showFakeSearchBox ? View.VISIBLE : View.GONE);
+        }
+        int toolbarTopPadding =
+                showFakeSearchBox
+                        ? mActivity
+                                .getResources()
+                                .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow)
+                        : 0;
+        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);
+    }
+
+    /**
+     * @return The fake search box view.
+     */
+""",
+)
+replace_if_missing(
+    coordinator,
+    "public void onMeasure(int width) {\n        updateSearchBoxVisibilityForToolbarPosition();",
+    """    public void onMeasure(int width) {
+        if (mIsTablet && mMostVisitedTilesCoordinator != null) {
+""",
+    """    public void onMeasure(int width) {
+        updateSearchBoxVisibilityForToolbarPosition();
+        if (mIsTablet && mMostVisitedTilesCoordinator != null) {
+""",
+)
+replace_if_missing(
+    coordinator,
+    "public void onSwitchToForeground() {\n        updateSearchBoxVisibilityForToolbarPosition();",
+    """    public void onSwitchToForeground() {
+        if (mMostVisitedTilesCoordinator != null) {
+""",
+    """    public void onSwitchToForeground() {
+        updateSearchBoxVisibilityForToolbarPosition();
+        if (mMostVisitedTilesCoordinator != null) {
+""",
+)
+replace_if_missing(
+    coordinator,
+    "mCurrentNtpFakeSearchBoxTransitionStartOffset =\n"
+    "                getNtpSearchBoxTransitionStartOffset(!mSearchProviderHasLogo) + mTopInset;\n"
+    "        updateSearchBoxVisibilityForToolbarPosition();",
+    """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
+                getNtpSearchBoxTransitionStartOffset(!mSearchProviderHasLogo) + mTopInset;
+
+        int toolbarHeightNoShadow =
+                mActivity.getResources().getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
+        // Top padding is applied to the NTP layout, ensuring all UI components remain in their
+        // original positions after Status bar is hidden.
+        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarHeightNoShadow + mTopInset);
+""",
+    """        mCurrentNtpFakeSearchBoxTransitionStartOffset =
+                getNtpSearchBoxTransitionStartOffset(!mSearchProviderHasLogo) + mTopInset;
+        updateSearchBoxVisibilityForToolbarPosition();
+""",
+)
+
+replace_if_missing(
+    dropdown,
+    "private boolean mAlignToBottom;",
+    """        private boolean mCurrentGestureAffectedKeyboardState;
+""",
+    """        private boolean mCurrentGestureAffectedKeyboardState;
+        private boolean mAlignToBottom;
+""",
+)
+replace_if_missing(
+    dropdown,
+    "// Helium: keep short bottom-omnibox suggestion lists next to the omnibox.",
+    """            super.onLayoutChildren(recycler, state);
+        }
+""",
+    """            super.onLayoutChildren(recycler, state);
+            // Helium: keep short bottom-omnibox suggestion lists next to the omnibox.
+            if (mAlignToBottom && state.getItemCount() > 0) {
+                View first = findViewByPosition(0);
+                View last = findViewByPosition(state.getItemCount() - 1);
+                if (first != null && last != null) {
+                    int gap = getHeight() - getPaddingBottom() - getDecoratedBottom(last);
+                    if (gap > 0) offsetChildrenVertical(gap);
+                }
+            }
+        }
+""",
+)
+replace_if_missing(
+    dropdown,
+    "void setAlignToBottom(boolean alignToBottom)",
+    """        /**
+         * Reset the internal scroll tracker. This needs to be called either when the
+""",
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            requestLayout();
+        }
+
+        /**
+         * Reset the internal scroll tracker. This needs to be called either when the
+""",
+)
+replace_if_missing(
+    container,
+    "setAlignToBottom(omniboxAlignment.top == 0);",
+    """        mOmniboxAlignment = omniboxAlignment;
+        mDropdown.setPaddingRelative(
+""",
+    """        mOmniboxAlignment = omniboxAlignment;
+        mDropdown.getLayoutScrollListener().setAlignToBottom(omniboxAlignment.top == 0);
+        mDropdown.setPaddingRelative(
+""",
+)
+PYCODE
 
 if version_lt "$CHROMIUM_VERSION" "151.0.7922.0"; then
     sed -i 's|if (mContainerView != null) mSwipeRefreshLayout.setEnabled(true);|if (mTab.getContentView() != null) mSwipeRefreshLayout.setEnabled(true);|' "$SWIPE_REFRESH_HANDLER"
