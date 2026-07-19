@@ -1308,6 +1308,12 @@ replace_if_missing(
 )
 replace_if_missing(
     coordinator,
+    "import android.view.Gravity;",
+    "import android.view.DragEvent;\n",
+    "import android.view.DragEvent;\nimport android.view.Gravity;\n",
+)
+replace_if_missing(
+    coordinator,
     "private @Nullable Boolean mShowFakeSearchBoxForToolbarPosition;",
     "    private @Nullable Boolean mIsWhiteBackgroundOnSearchBoxApplied;\n",
     "    private @Nullable Boolean mIsWhiteBackgroundOnSearchBoxApplied;\n"
@@ -1357,7 +1363,67 @@ replace_if_missing(
     /**
      * @return The fake search box view.
      */
+    """,
+)
+replace_if_missing(
+    coordinator,
+    "updateNtpTilesPositionForToolbar();",
+    "        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);\n",
+    """        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);
+        updateNtpTilesPositionForToolbar();
 """,
+)
+replace_if_missing(
+    coordinator,
+    "private void updateNtpTilesPositionForToolbar()",
+    """    /**
+     * @return The fake search box view.
+""",
+    """    // Helium: the NTP tiles belong above a bottom toolbar, not below the status bar.
+    private void updateNtpTilesPositionForToolbar() {
+        boolean bottomToolbar =
+                !mIsTablet && !AddressBarPreference.isToolbarConfiguredToShowOnTop();
+        View spacer = mNewTabPageLayout.findViewById(R.id.no_search_logo_spacer);
+        if (spacer != null) {
+            spacer.setVisibility(bottomToolbar ? View.GONE : View.VISIBLE);
+        }
+        mNewTabPageLayout.setGravity(
+                bottomToolbar ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.CENTER);
+
+        View parent = mNewTabPageLayout.getParent() instanceof View
+                ? (View) mNewTabPageLayout.getParent()
+                : null;
+        int toolbarHeight =
+                mActivity.getResources().getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
+        int minimumHeight =
+                bottomToolbar && parent != null
+                        ? Math.max(parent.getHeight() - toolbarHeight, 0)
+                        : 0;
+        mNewTabPageLayout.setMinimumHeight(minimumHeight);
+
+        ViewGroup.LayoutParams layoutParams = mNewTabPageLayout.getLayoutParams();
+        if (layoutParams != null) {
+            int desiredHeight =
+                    bottomToolbar
+                            ? ViewGroup.LayoutParams.MATCH_PARENT
+                            : ViewGroup.LayoutParams.WRAP_CONTENT;
+            if (layoutParams.height != desiredHeight) {
+                layoutParams.height = desiredHeight;
+                mNewTabPageLayout.setLayoutParams(layoutParams);
+            }
+        }
+    }
+
+    /**
+     * @return The fake search box view.
+    """,
+)
+replace_if_missing(
+    coordinator,
+    "updateNtpTilesPositionForToolbar();\n        onUrlFocusAnimationChanged();",
+    "        onUrlFocusAnimationChanged();\n",
+    "        updateNtpTilesPositionForToolbar();\n"
+    "        onUrlFocusAnimationChanged();\n",
 )
 replace_if_missing(
     coordinator,
