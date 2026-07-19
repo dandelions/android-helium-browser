@@ -1789,7 +1789,8 @@ path.write_text(text)
 PYCODE
 
 grep -q 'public void setActiveWebContents' "$TOOLBAR_BRIDGE" || \
-    perl -0pi -e 's|(\n    public void executeUserAction\(String actionId, \@InvocationSource int source\) \{\n)|\n    public void setActiveWebContents(\@Nullable WebContents webContents) {\n        assert mNativeExtensionsToolbarAndroid != 0;\n        if (mProfile.shutdownStarted()) {\n            return;\n        }\n        ExtensionsToolbarBridgeJni.get()\n                .setActiveWebContents(mNativeExtensionsToolbarAndroid, webContents);\n    }\n$1|' "$TOOLBAR_BRIDGE"
+    perl -0pi -e 's|(\n    public void executeUserAction\(String actionId, \@InvocationSource int source\) \{\n)|\n    public void setActiveWebContents(\@Nullable WebContents webContents) {\n        assert mNativeExtensionsToolbarAndroid != 0;\n        ExtensionsToolbarBridgeJni.get()\n                .setActiveWebContents(mNativeExtensionsToolbarAndroid, webContents);\n    }\n$1|' "$TOOLBAR_BRIDGE"
+perl -0pi -e 's|\n        if \(mProfile\.shutdownStarted\(\)\) \{\n            return;\n        \}(\n        ExtensionsToolbarBridgeJni\.get\(\)\n                \.setActiveWebContents)|$1|' "$TOOLBAR_BRIDGE"
 perl -0pi -e 'if (!/void setActiveWebContents\(\n\s+long nativeExtensionsToolbarAndroid,/) { s|(\n        void executeUserAction\(\n                long nativeExtensionsToolbarAndroid,)|\n        void setActiveWebContents(\n                long nativeExtensionsToolbarAndroid,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);\n$1| }' "$TOOLBAR_BRIDGE"
 python3 - "$ACTION_LIST_MEDIATOR" <<'PYCODE'
 from pathlib import Path
