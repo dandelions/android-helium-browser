@@ -135,8 +135,8 @@ echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
 # The toolbar icon toggles the menu, so the duplicate close button is not needed.
 perl -0pi -e 's|\n        android:padding="12dp"||g; s|(android:id="\@\+id/extensions_menu_close_button"\n)(?!        android:visibility="gone"\n)|$1        android:visibility="gone"\n|' "$EXTENSIONS_MENU_HEADER"
 
-# Titanium v150.0.7871.124 compatibility fixes adapted to the Helium-renamed
-# Vanadium source tree. Every insertion is guarded because this script is
+# Titanium compatibility fixes adapted to the Helium-renamed Vanadium source
+# tree. Every insertion is guarded because this script is
 # intentionally run repeatedly before FAST_LOCAL_BUILD.
 grep -q 'if (!isEligible()) { return; }' "$HELIUM_CONF_PARSER" || \
     sed -i 's|private static void init(Context ctx, SpecType specType) {|private static void init(Context ctx, SpecType specType) { if (!isEligible()) { return; }|' "$HELIUM_CONF_PARSER"
@@ -314,17 +314,38 @@ replace_if_missing(
      */
     """,
 )
-replace_if_missing(
-    coordinator,
-    "public void onMeasure(int width) {\n        updateSearchBoxVisibilityForToolbarPosition();",
-    """    public void onMeasure(int width) {
+coordinator_text = coordinator.read_text()
+measure_marker = (
+    "public void onMeasure(int width) {\n"
+    "        updateSearchBoxVisibilityForToolbarPosition();"
+)
+if measure_marker not in coordinator_text:
+    old_measure = """    public void onMeasure(int width) {
         if (mIsTablet && mMostVisitedTilesCoordinator != null) {
-""",
-    """    public void onMeasure(int width) {
+"""
+    new_measure = """    public void onMeasure(int width) {
         updateSearchBoxVisibilityForToolbarPosition();
         if (mIsTablet && mMostVisitedTilesCoordinator != null) {
-""",
-)
+"""
+    if old_measure not in coordinator_text:
+        old_measure = """    public void onMeasure(int width) {
+        unifyElementWidths(width);
+"""
+        new_measure = """    public void onMeasure(int width) {
+        updateSearchBoxVisibilityForToolbarPosition();
+        unifyElementWidths(width);
+"""
+    if old_measure not in coordinator_text:
+        raise SystemExit(f"NTP onMeasure pattern not found in {coordinator}")
+    coordinator.write_text(coordinator_text.replace(old_measure, new_measure, 1))
+
+coordinator_text = coordinator.read_text()
+if "private final boolean mIsLff;" in coordinator_text:
+    coordinator_text = coordinator_text.replace(
+        "mIsTablet || AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+        "mIsLff || AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+    )
+    coordinator.write_text(coordinator_text)
 replace_if_missing(
     coordinator,
     "public void onSwitchToForeground() {\n        updateSearchBoxVisibilityForToolbarPosition();",

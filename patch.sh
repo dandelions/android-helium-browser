@@ -2,12 +2,12 @@
 
 mkdir -p chrome/android/java/res_helium_base
 for icon in $(find chrome/android/java/res_helium_base -type f -name '*.png'); do convert $icon -fill navy -tint 36 $icon; done
+sed -i 's|<application |<application android:extractNativeLibs="false" |' chrome/android/java/AndroidManifest.xml
 # sed -i 's|Google LLC|jqssun, Google LLC|' chrome/browser/ui/android/strings/android_chrome_strings.grd
 
 sed -i 's|private static void init(Context ctx, SpecType specType) {|private static void init(Context ctx, SpecType specType) { if (!isEligible()) { return; }|' helium/android_config/parser/java/src/app/helium/config/HeliumConfParser.java
 sed -i '/safelyRemovePreference(prefFragment/d' helium/chromium_src/chrome/browser/language/android/java/src/org/chromium/chrome/browser/language/settings/LanguageSettingsExt.java
 sed -i '/removeEntryForKey(fragmentName, "translate_switch")/d' chrome/android/java/src/org/chromium/chrome/browser/settings/search/SettingsSearchCoordinator.java
-
 sed -i '/feature_overrides.EnableFeature(::features::kSkipVulkanBlocklist);/d' chrome/browser/chrome_browser_field_trials.cc
 sed -i '/feature_overrides.EnableFeature(::features::kDefaultANGLEVulkan);/d' chrome/browser/chrome_browser_field_trials.cc
 sed -i '/feature_overrides.EnableFeature(::features::kVulkanFromANGLE);/d' chrome/browser/chrome_browser_field_trials.cc
@@ -431,7 +431,7 @@ sed -i 's|if (!InstallVerifier::IsFromStore(extension, context_)) {|if (!extensi
 perl -0pi -e 's/^\s+"proxy\.json",\n//mg; s/^(schema_sources_ = \[\n)/$1  "proxy.json",\n/' chrome/common/extensions/api/api_sources.gni
 perl -0pi -e 's/^\s+"browser_action\.json",\n//mg; s/^\s+"page_action\.json",\n//mg; s/^(uncompiled_sources_ = \[\n)/$1  "browser_action.json",\n  "page_action.json",\n/' chrome/common/extensions/api/api_sources.gni
 sed -i 's/api::webstore_private::MV2DeprecationStatus::kHardDisable)));/api::webstore_private::MV2DeprecationStatus::kNone)));/' chrome/browser/extensions/api/webstore_private/webstore_private_api.cc
-sed -i 's/bool g_allow_mv2_for_testing = false;/bool g_allow_mv2_for_testing = true;/' extensions/browser/manifest_v2_experiment_manager.cc
+sed -i 's/bool g_allow_mv2_for_testing = false;/bool g_allow_mv2_for_testing = true;/' extensions/browser/manifest_v2_handler.cc
 
 # android: require explicit user confirmation before launching external apps
 perl -0pi -e 's|            if \(debug\(\)\) Log\.i\(TAG, "startActivity"\);\n            context\.startActivity\(intent\);\n            recordExternalNavigationDispatched\(intent\);\n            mDelegate\.reportIntentToSafeBrowsing\(intent\);|            if (debug()) Log.i(TAG, "startActivity");\n            Intent launchIntent = intent;\n            if (!Intent.ACTION_CHOOSER.equals(intent.getAction())\n                    \&\& !Intent.ACTION_PICK_ACTIVITY.equals(intent.getAction())) {\n                launchIntent = Intent.createChooser(intent, null);\n            }\n            context.startActivity(launchIntent);\n            recordExternalNavigationDispatched(intent);\n            mDelegate.reportIntentToSafeBrowsing(intent);|' components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
@@ -1194,6 +1194,8 @@ sed -i '/extension_l10n_util::ValidateExtensionLocales($/,/error) &&$/{s|extensi
 sed -i 's|if (!_omit_dex) {|if (_is_base_module \&\& !_omit_dex) {|' build/config/android/rules.gni
 
 # tmp
+sed -i 's|if (!IncognitoUtils.shouldOpenIncognitoAsWindow() \|\| isIncognitoShowing()) {|if (true) {|' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+sed -i 's|if (!separateIncognitoWindow \|\| isIncognito) {|if (true) {|' chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 sed -i 's/BASE_FEATURE(kAndroidSearchInSettings,"SearchInSettings", base::FEATURE_DISABLED_BY_DEFAULT);/BASE_FEATURE(kAndroidSearchInSettings,"SearchInSettings", base::FEATURE_ENABLED_BY_DEFAULT);/' chrome/browser/flags/android/chrome_feature_list.cc
 perl -0pi -e 's|current_toolchain == default_toolchain,|current_toolchain == default_toolchain \|\|\n        current_toolchain == "//build/toolchain/android:android_clang_arm64_webview",|' build/timestamp.gni
 for file in components/omnibox/browser/autocomplete_match.h components/omnibox/browser/autocomplete_match.cc components/omnibox/browser/actions/omnibox_action.h components/omnibox/browser/location_bar_model_impl.cc components/omnibox/browser/location_bar_model_util.cc; do
@@ -1361,17 +1363,38 @@ replace_if_missing(
      */
     """,
 )
-replace_if_missing(
-    coordinator,
-    "public void onMeasure(int width) {\n        updateSearchBoxVisibilityForToolbarPosition();",
-    """    public void onMeasure(int width) {
+coordinator_text = coordinator.read_text()
+measure_marker = (
+    "public void onMeasure(int width) {\n"
+    "        updateSearchBoxVisibilityForToolbarPosition();"
+)
+if measure_marker not in coordinator_text:
+    old_measure = """    public void onMeasure(int width) {
         if (mIsTablet && mMostVisitedTilesCoordinator != null) {
-""",
-    """    public void onMeasure(int width) {
+"""
+    new_measure = """    public void onMeasure(int width) {
         updateSearchBoxVisibilityForToolbarPosition();
         if (mIsTablet && mMostVisitedTilesCoordinator != null) {
-""",
-)
+"""
+    if old_measure not in coordinator_text:
+        old_measure = """    public void onMeasure(int width) {
+        unifyElementWidths(width);
+"""
+        new_measure = """    public void onMeasure(int width) {
+        updateSearchBoxVisibilityForToolbarPosition();
+        unifyElementWidths(width);
+"""
+    if old_measure not in coordinator_text:
+        raise SystemExit(f"NTP onMeasure pattern not found in {coordinator}")
+    coordinator.write_text(coordinator_text.replace(old_measure, new_measure, 1))
+
+coordinator_text = coordinator.read_text()
+if "private final boolean mIsLff;" in coordinator_text:
+    coordinator_text = coordinator_text.replace(
+        "mIsTablet || AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+        "mIsLff || AddressBarPreference.isToolbarConfiguredToShowOnTop()",
+    )
+    coordinator.write_text(coordinator_text)
 replace_if_missing(
     coordinator,
     "public void onSwitchToForeground() {\n        updateSearchBoxVisibilityForToolbarPosition();",
@@ -1939,7 +1962,6 @@ sed -i 's|if (mContainerView != null) mSwipeRefreshLayout.setEnabled(true);|if (
 sed -i 's|assumeNonNull(mContainerView).addView(mSwipeRefreshLayout);|assumeNonNull(mTab.getContentView()).addView(mSwipeRefreshLayout);|' chrome/android/java/src/org/chromium/chrome/browser/SwipeRefreshHandler.java
 sed -i 's|assumeNonNull(mContainerView).removeView(mSwipeRefreshLayout);|((ViewGroup) mSwipeRefreshLayout.getParent()).removeView(mSwipeRefreshLayout);|' chrome/android/java/src/org/chromium/chrome/browser/SwipeRefreshHandler.java
 fi
-
 # crbug.com/445475304: incognito back
 sed -i 's|private void onTabChanged(@Nullable Tab tab) {|private void onTabChanged(@Nullable Tab tab) { if (tab != null \&\& tab.isIncognitoBranded()) { mSystemBackPressSupplier.set(true); return; }|' chrome/browser/back_press/android/java/src/org/chromium/chrome/browser/back_press/MinimizeAppAndCloseTabBackPressHandler.java
 
