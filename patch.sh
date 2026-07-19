@@ -1428,6 +1428,11 @@ replace_if_present(
 )
 replace_if_present(
     dropdown,
+    "if (mAlignToBottom || OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {",
+    "if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {",
+)
+replace_if_present(
+    dropdown,
     """        void setAlignToBottom(boolean alignToBottom) {
             if (mAlignToBottom == alignToBottom) return;
             mAlignToBottom = alignToBottom;
@@ -1437,8 +1442,42 @@ replace_if_present(
     """        void setAlignToBottom(boolean alignToBottom) {
             if (mAlignToBottom == alignToBottom) return;
             mAlignToBottom = alignToBottom;
+            setReverseLayout(false);
+            requestLayout();
+        }
+""",
+)
+replace_if_present(
+    dropdown,
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            setReverseLayout(false);
+            requestLayout();
+        }
+""",
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            setReverseLayout(false);
+            requestLayout();
+        }
+""",
+)
+replace_if_present(
+    dropdown,
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
             setReverseLayout(alignToBottom);
             scrollToPositionWithOffset(0, 0);
+            requestLayout();
+        }
+""",
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            setReverseLayout(false);
             requestLayout();
         }
 """,
@@ -1455,33 +1494,40 @@ replace_if_present(
     """        void setAlignToBottom(boolean alignToBottom) {
             if (mAlignToBottom == alignToBottom) return;
             mAlignToBottom = alignToBottom;
-            setReverseLayout(alignToBottom);
-            scrollToPositionWithOffset(0, 0);
+            setReverseLayout(false);
             requestLayout();
         }
 """,
 )
 replace_if_missing(
     dropdown,
-    "if (mAlignToBottom || OmniboxFeatures.sResetSuggestionsScroll.isEnabled())",
+    "Helium: anchor short bottom-toolbar suggestion lists above the omnibox.",
     "if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
     "                scrollToPositionWithOffset(0, 0);\n"
-    "            }",
-    "if (mAlignToBottom || OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
+    "            }\n"
+    "            super.onLayoutChildren(recycler, state);",
+    "if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
     "                scrollToPositionWithOffset(0, 0);\n"
+    "            }\n"
+    "            super.onLayoutChildren(recycler, state);\n"
+    "            // Helium: anchor short bottom-toolbar suggestion lists above the omnibox.\n"
+    "            if (mAlignToBottom && getChildCount() > 0) {\n"
+    "                View bottomChild = getChildAt(getChildCount() - 1);\n"
+    "                int availableBottom = getHeight() - getPaddingBottom();\n"
+    "                int gap = availableBottom - getDecoratedBottom(bottomChild);\n"
+    "                if (gap > 0) offsetChildrenVertical(gap);\n"
     "            }",
 )
 replace_if_missing(
     dropdown,
-    "scrollToPositionWithOffset(0, 0);\n            requestLayout();",
+    "void setAlignToBottom(boolean alignToBottom)",
     """        /**
          * Reset the internal scroll tracker. This needs to be called either when the
 """,
     """        void setAlignToBottom(boolean alignToBottom) {
             if (mAlignToBottom == alignToBottom) return;
             mAlignToBottom = alignToBottom;
-            setReverseLayout(alignToBottom);
-            scrollToPositionWithOffset(0, 0);
+            setReverseLayout(false);
             requestLayout();
         }
 
@@ -1500,6 +1546,11 @@ replace_if_missing(
         mDropdown.setPaddingRelative(
 """,
 )
+replace_if_present(
+    embedder,
+    ".getInsets(WindowInsetsCompat.Type.statusBars())",
+    ".getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())",
+)
 replace_if_missing(
     embedder,
     "// Helium: keep bottom-toolbar suggestions below the status bar.",
@@ -1515,7 +1566,7 @@ replace_if_missing(
             int statusBarInset =
                     WindowInsetsCompat.toWindowInsetsCompat(
                                     contentView.getRootWindowInsets(), contentView)
-                            .getInsets(WindowInsetsCompat.Type.statusBars())
+                            .getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())
                             .top;
             paddingTop = Math.max(paddingTop, statusBarInset);
         }
