@@ -1253,7 +1253,8 @@ NEW_TAB_PAGE_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/ntp
 OMNIBOX_SUGGESTIONS_DROPDOWN=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdown.java
 OMNIBOX_SUGGESTIONS_CONTAINER=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsContainer.java
 OMNIBOX_DROPDOWN_EMBEDDER=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxSuggestionsDropdownEmbedderImpl.java
-python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" <<'PYCODE'
+OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdownEmbedder.java
+python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" <<'PYCODE'
 from pathlib import Path
 import sys
 
@@ -1278,6 +1279,7 @@ coordinator = Path(sys.argv[2])
 dropdown = Path(sys.argv[3])
 container = Path(sys.argv[4])
 embedder = Path(sys.argv[5])
+embedder_interface = Path(sys.argv[6])
 
 replace_if_missing(
     ntp,
@@ -1501,22 +1503,15 @@ replace_if_present(
 )
 replace_if_missing(
     dropdown,
-    "Helium: anchor short bottom-toolbar suggestion lists above the omnibox.",
+    "if (!mAlignToBottom && OmniboxFeatures.sResetSuggestionsScroll.isEnabled())",
     "if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
     "                scrollToPositionWithOffset(0, 0);\n"
     "            }\n"
     "            super.onLayoutChildren(recycler, state);",
-    "if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
+    "if (!mAlignToBottom && OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
     "                scrollToPositionWithOffset(0, 0);\n"
     "            }\n"
-    "            super.onLayoutChildren(recycler, state);\n"
-    "            // Helium: anchor short bottom-toolbar suggestion lists above the omnibox.\n"
-    "            if (mAlignToBottom && getChildCount() > 0) {\n"
-    "                View bottomChild = getChildAt(getChildCount() - 1);\n"
-    "                int availableBottom = getHeight() - getPaddingBottom();\n"
-    "                int gap = availableBottom - getDecoratedBottom(bottomChild);\n"
-    "                if (gap > 0) offsetChildrenVertical(gap);\n"
-    "            }",
+    "            super.onLayoutChildren(recycler, state);",
 )
 replace_if_missing(
     dropdown,
@@ -1535,14 +1530,19 @@ replace_if_missing(
          * Reset the internal scroll tracker. This needs to be called either when the
 """,
 )
-replace_if_missing(
+replace_if_present(
     container,
     "setAlignToBottom(omniboxAlignment.top == 0);",
+    "setAlignToBottom(omniboxAlignment.isBottomToolbar);",
+)
+replace_if_missing(
+    container,
+    "setAlignToBottom(omniboxAlignment.isBottomToolbar);",
     """        mOmniboxAlignment = omniboxAlignment;
         mDropdown.setPaddingRelative(
 """,
     """        mOmniboxAlignment = omniboxAlignment;
-        mDropdown.getLayoutScrollListener().setAlignToBottom(omniboxAlignment.top == 0);
+        mDropdown.getLayoutScrollListener().setAlignToBottom(omniboxAlignment.isBottomToolbar);
         mDropdown.setPaddingRelative(
 """,
 )
@@ -1576,14 +1576,227 @@ replace_if_missing(
         OmniboxAlignment omniboxAlignment =
 """,
 )
-replace_if_missing(
+replace_if_present(
     embedder,
     "                        paddingTop,\n                        paddingBottom);",
+    "                        paddingTop,\n"
+    "                        paddingBottom,\n"
+    "                        controlsPosition == ControlsPosition.BOTTOM);",
+)
+replace_if_missing(
+    embedder,
+    "paddingBottom,\n                        controlsPosition == ControlsPosition.BOTTOM);",
     """                        mTopPaddingForEdgeToEdge,
                         paddingBottom);
 """,
     """                        paddingTop,
+                        paddingBottom,
+                        controlsPosition == ControlsPosition.BOTTOM);
+""",
+)
+
+# The previous revisions inferred bottom mode from top == 0 and only reversed
+# item traversal. Normalize them to an explicit alignment flag and anchor the
+# list from the end so adapter position 0 stays next to the bottom omnibox.
+replace_if_present(
+    dropdown,
+    """            super.onLayoutChildren(recycler, state);
+            // Helium: anchor short bottom-toolbar suggestion lists above the omnibox.
+            if (mAlignToBottom && getChildCount() > 0) {
+                View bottomChild = getChildAt(getChildCount() - 1);
+                int availableBottom = getHeight() - getPaddingBottom();
+                int gap = availableBottom - getDecoratedBottom(bottomChild);
+                if (gap > 0) offsetChildrenVertical(gap);
+            }
+""",
+    """            super.onLayoutChildren(recycler, state);
+""",
+)
+replace_if_present(
+    dropdown,
+    """            if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {
+                scrollToPositionWithOffset(0, 0);
+            }
+""",
+    """            if (!mAlignToBottom && OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {
+                scrollToPositionWithOffset(0, 0);
+            }
+""",
+)
+replace_if_present(
+    embedder,
+    """        int paddingTop = mTopPaddingForEdgeToEdge;
+        if (controlsPosition == ControlsPosition.BOTTOM
+                && contentView != null
+                && contentView.getRootWindowInsets() != null) {
+            int statusBarInset =
+                    WindowInsetsCompat.toWindowInsetsCompat(
+                                    contentView.getRootWindowInsets(), contentView)
+                            .getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())
+                            .top;
+            paddingTop = Math.max(paddingTop, statusBarInset);
+        }
+""",
+    """        int paddingTop = mTopPaddingForEdgeToEdge;
+""",
+)
+replace_if_present(
+    dropdown,
+    """            setStackFromEnd(alignToBottom);
+            scrollToPositionWithOffset(0, 0);
+            requestLayout();
+""",
+    """            setStackFromEnd(alignToBottom);
+            if (!alignToBottom) scrollToPositionWithOffset(0, 0);
+            requestLayout();
+""",
+)
+replace_if_present(
+    dropdown,
+    """            postOnAnimation(() -> scrollToPositionWithOffset(0, 0));
+""",
+    """            if (!mAlignToBottom) {
+                postOnAnimation(() -> scrollToPositionWithOffset(0, 0));
+            }
+""",
+)
+replace_if_present(
+    dropdown,
+    """        mLayoutScrollListener.scrollToPositionWithOffset(0, 0);
+        mSelectionController.reset();
+""",
+    """        if (!mLayoutScrollListener.mAlignToBottom) {
+            mLayoutScrollListener.scrollToPositionWithOffset(0, 0);
+        }
+        mSelectionController.reset();
+""",
+)
+replace_if_present(
+    dropdown,
+    """            setReverseLayout(false);
+            requestLayout();
+""",
+    """            setReverseLayout(alignToBottom);
+            setStackFromEnd(alignToBottom);
+            scrollToPositionWithOffset(0, 0);
+            requestLayout();
+""",
+)
+if "setStackFromEnd(alignToBottom);" not in dropdown.read_text():
+    raise SystemExit(f"Bottom suggestion stack-from-end patch did not apply: {dropdown}")
+
+replace_if_missing(
+    embedder_interface,
+    "public final boolean isBottomToolbar;",
+    "        public final int paddingBottom;\n",
+    "        public final int paddingBottom;\n"
+    "        public final boolean isBottomToolbar;\n",
+)
+replace_if_missing(
+    embedder_interface,
+    "int paddingBottom,\n                boolean isBottomToolbar)",
+    """                int paddingTop,
+                int paddingBottom) {
+            this.left = left;
+""",
+    """                int paddingTop,
+                int paddingBottom) {
+            this(
+                    left,
+                    top,
+                    width,
+                    height,
+                    paddingLeft,
+                    paddingRight,
+                    paddingTop,
+                    paddingBottom,
+                    false);
+        }
+
+        public OmniboxAlignment(
+                int left,
+                int top,
+                int width,
+                int height,
+                int paddingLeft,
+                int paddingRight,
+                int paddingTop,
+                int paddingBottom,
+                boolean isBottomToolbar) {
+            this.left = left;
+""",
+)
+replace_if_missing(
+    embedder_interface,
+    "this.isBottomToolbar = isBottomToolbar;",
+    "            this.paddingBottom = paddingBottom;\n",
+    "            this.paddingBottom = paddingBottom;\n"
+    "            this.isBottomToolbar = isBottomToolbar;\n",
+)
+replace_if_missing(
+    embedder_interface,
+    "&& other.isBottomToolbar == this.isBottomToolbar",
+    "                    && other.height == this.height\n",
+    "                    && other.height == this.height\n"
+    "                    && other.isBottomToolbar == this.isBottomToolbar\n",
+)
+
+replace_if_present(
+    container,
+    "setAlignToBottom(omniboxAlignment.top == 0);",
+    "setAlignToBottom(omniboxAlignment.isBottomToolbar);",
+)
+replace_if_missing(
+    embedder,
+    "// Helium: reserve the status-bar region in the dropdown geometry.",
+    """        int top;
+        int left;
+        int width;
+        int paddingLeft = 0;
+        int paddingRight = 0;
+
+        @ControlsPosition int controlsPosition = mControlsPositionSupplier.get();
+        if (controlsPosition == ControlsPosition.BOTTOM) {
+            top = 0;
+""",
+    """        @ControlsPosition int controlsPosition = mControlsPositionSupplier.get();
+        // Helium: reserve the status-bar region in the dropdown geometry.
+        int statusBarInset = 0;
+        if (controlsPosition == ControlsPosition.BOTTOM
+                && contentView != null
+                && contentView.getRootWindowInsets() != null) {
+            statusBarInset =
+                    WindowInsetsCompat.toWindowInsetsCompat(
+                                    contentView.getRootWindowInsets(), contentView)
+                            .getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())
+                            .top;
+        }
+
+        int top;
+        int left;
+        int width;
+        int paddingLeft = 0;
+        int paddingRight = 0;
+
+        if (controlsPosition == ControlsPosition.BOTTOM) {
+            top = statusBarInset;
+""",
+)
+replace_if_missing(
+    embedder,
+    "- navBarHeight\n                            - statusBarInset;",
+    "- navBarHeight;",
+    "- navBarHeight\n                            - statusBarInset;",
+)
+replace_if_missing(
+    embedder,
+    "paddingBottom,\n                        controlsPosition == ControlsPosition.BOTTOM);",
+    """                        paddingTop,
                         paddingBottom);
+""",
+    """                        paddingTop,
+                        paddingBottom,
+                        controlsPosition == ControlsPosition.BOTTOM);
 """,
 )
 PYCODE
