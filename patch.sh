@@ -1252,7 +1252,8 @@ NEW_TAB_PAGE=chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.
 NEW_TAB_PAGE_COORDINATOR=chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPageCoordinator.java
 OMNIBOX_SUGGESTIONS_DROPDOWN=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdown.java
 OMNIBOX_SUGGESTIONS_CONTAINER=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsContainer.java
-python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" <<'PYCODE'
+OMNIBOX_DROPDOWN_EMBEDDER=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxSuggestionsDropdownEmbedderImpl.java
+python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" <<'PYCODE'
 from pathlib import Path
 import sys
 
@@ -1276,6 +1277,7 @@ ntp = Path(sys.argv[1])
 coordinator = Path(sys.argv[2])
 dropdown = Path(sys.argv[3])
 container = Path(sys.argv[4])
+embedder = Path(sys.argv[5])
 
 replace_if_missing(
     ntp,
@@ -1436,13 +1438,42 @@ replace_if_present(
             if (mAlignToBottom == alignToBottom) return;
             mAlignToBottom = alignToBottom;
             setReverseLayout(alignToBottom);
+            scrollToPositionWithOffset(0, 0);
+            requestLayout();
+        }
+""",
+)
+replace_if_present(
+    dropdown,
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            setReverseLayout(alignToBottom);
+            requestLayout();
+        }
+""",
+    """        void setAlignToBottom(boolean alignToBottom) {
+            if (mAlignToBottom == alignToBottom) return;
+            mAlignToBottom = alignToBottom;
+            setReverseLayout(alignToBottom);
+            scrollToPositionWithOffset(0, 0);
             requestLayout();
         }
 """,
 )
 replace_if_missing(
     dropdown,
-    "setReverseLayout(alignToBottom);",
+    "if (mAlignToBottom || OmniboxFeatures.sResetSuggestionsScroll.isEnabled())",
+    "if (OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
+    "                scrollToPositionWithOffset(0, 0);\n"
+    "            }",
+    "if (mAlignToBottom || OmniboxFeatures.sResetSuggestionsScroll.isEnabled()) {\n"
+    "                scrollToPositionWithOffset(0, 0);\n"
+    "            }",
+)
+replace_if_missing(
+    dropdown,
+    "scrollToPositionWithOffset(0, 0);\n            requestLayout();",
     """        /**
          * Reset the internal scroll tracker. This needs to be called either when the
 """,
@@ -1450,6 +1481,7 @@ replace_if_missing(
             if (mAlignToBottom == alignToBottom) return;
             mAlignToBottom = alignToBottom;
             setReverseLayout(alignToBottom);
+            scrollToPositionWithOffset(0, 0);
             requestLayout();
         }
 
@@ -1466,6 +1498,41 @@ replace_if_missing(
     """        mOmniboxAlignment = omniboxAlignment;
         mDropdown.getLayoutScrollListener().setAlignToBottom(omniboxAlignment.top == 0);
         mDropdown.setPaddingRelative(
+""",
+)
+replace_if_missing(
+    embedder,
+    "// Helium: keep bottom-toolbar suggestions below the status bar.",
+    """        // TODO(pnoland@, https://crbug.com/40257117): avoid pushing changes that are identical to
+        // the previous alignment value.
+        OmniboxAlignment omniboxAlignment =
+""",
+    """        // Helium: keep bottom-toolbar suggestions below the status bar.
+        int paddingTop = mTopPaddingForEdgeToEdge;
+        if (controlsPosition == ControlsPosition.BOTTOM
+                && contentView != null
+                && contentView.getRootWindowInsets() != null) {
+            int statusBarInset =
+                    WindowInsetsCompat.toWindowInsetsCompat(
+                                    contentView.getRootWindowInsets(), contentView)
+                            .getInsets(WindowInsetsCompat.Type.statusBars())
+                            .top;
+            paddingTop = Math.max(paddingTop, statusBarInset);
+        }
+
+        // TODO(pnoland@, https://crbug.com/40257117): avoid pushing changes that are identical to
+        // the previous alignment value.
+        OmniboxAlignment omniboxAlignment =
+""",
+)
+replace_if_missing(
+    embedder,
+    "                        paddingTop,\n                        paddingBottom);",
+    """                        mTopPaddingForEdgeToEdge,
+                        paddingBottom);
+""",
+    """                        paddingTop,
+                        paddingBottom);
 """,
 )
 PYCODE
