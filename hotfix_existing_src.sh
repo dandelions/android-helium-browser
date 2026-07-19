@@ -104,8 +104,9 @@ OMNIBOX_SUGGESTIONS_DROPDOWN=chrome/browser/ui/android/omnibox/java/src/org/chro
 OMNIBOX_SUGGESTIONS_CONTAINER=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsContainer.java
 OMNIBOX_DROPDOWN_EMBEDDER=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/OmniboxSuggestionsDropdownEmbedderImpl.java
 OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE=chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/OmniboxSuggestionsDropdownEmbedder.java
+FEED_SURFACE_COORDINATOR=chrome/android/feed/core/java/src/org/chromium/chrome/browser/feed/FeedSurfaceCoordinator.java
 
-for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE"; do
+for file in "$BRIDGE" "$TOOLBAR_BRIDGE" "$MENU_MEDIATOR" "$TOOLBAR" "$CTA" "$VERIFIER" "$PROFILE_INFO" "$DEV_PRIVATE_FUNCTIONS" "$TIMESTAMP_GNI" "$CONTENT_SETTINGS_FEATURES" "$APP_MENU_DELEGATE" "$MENU_DELEGATE_CC" "$MENU_DELEGATE_H" "$TOOLBAR_ANDROID_CC" "$TOOLBAR_ANDROID_H" "$ACTION_DELEGATE_CC" "$ACTION_DELEGATE_H" "$ACTION_LIST_MEDIATOR" "$MENU_COORDINATOR" "$MENU_VIEW_MODEL" "$EXTENSION_ACTION_VIEW_MODEL" "$TABS_EVENT_ROUTER_CC" "$ZIP_INSTALLER" "$WEB_REQUEST_ROUTER" "$EXTENSION_PREFS" "$CHROME_EXTENSIONS_BROWSER_CLIENT" "$EXTENSION_TAB_UTIL_CC" "$TAB_STORE" "$ANDROID_MANIFEST" "$CUSTOM_TAB_MINIMIZATION_MANAGER" "$MINIMIZED_FEATURE_UTILS" "$DEVTOOLS_INTENT_DATA_PROVIDER" "$BASE_CUSTOM_TAB_ROOT_UI_COORDINATOR" "$DEVTOOLS_ACTIVITY" "$DEVTOOLS_WINDOW_ANDROID_JAVA" "$DEVTOOLS_WINDOW_ANDROID_CC" "$DEVTOOLS_WINDOW_CC" "$JS_DIALOG_MANAGER" "$UNDO_BAR" "$ABOUT_FLAGS" "$NAV_POLICY" "$WINDOW_OPEN_TRAITS" "$WEB_CONTENTS_IMPL" "$TABS_API_CC" "$HUB_LAYOUT" "$HELIUM_CONF_PARSER" "$LANGUAGE_SETTINGS_EXT" "$SETTINGS_SEARCH_COORDINATOR" "$GL_FEATURES" "$DOWNLOAD_CRX_UTIL" "$ACTION_LIST_COORDINATOR" "$EXTENSION_POPUP_CONTENTS" "$EXTENSION_INSTALL_DIALOG" "$DEFAULT_LOCALE_HANDLER" "$EXTENSION_L10N_UTIL" "$UNPACKED_INSTALLER" "$VIRTUAL_DOCUMENT_PATH" "$SWIPE_REFRESH_HANDLER" "$INCOGNITO_BACK_HANDLER" "$CHROME_VERSION_FILE" "$EXTENSIONS_MENU_HEADER" "$TOOLBAR_POSITION_CONTROLLER" "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR"; do
     if [ ! -f "$file" ]; then
         echo "Expected file not found: $SRC_DIR/$file" >&2
         exit 1
@@ -207,7 +208,7 @@ fi
 
 # In bottom-toolbar mode, use the real omnibox on the NTP instead of leaving a
 # second fake search box at the top. Keep short suggestion lists adjacent to it.
-python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" <<'PYCODE'
+python3 - "$NEW_TAB_PAGE" "$NEW_TAB_PAGE_COORDINATOR" "$OMNIBOX_SUGGESTIONS_DROPDOWN" "$OMNIBOX_SUGGESTIONS_CONTAINER" "$OMNIBOX_DROPDOWN_EMBEDDER" "$OMNIBOX_DROPDOWN_EMBEDDER_INTERFACE" "$FEED_SURFACE_COORDINATOR" <<'PYCODE'
 from pathlib import Path
 import sys
 
@@ -233,6 +234,7 @@ dropdown = Path(sys.argv[3])
 container = Path(sys.argv[4])
 embedder = Path(sys.argv[5])
 embedder_interface = Path(sys.argv[6])
+feed_surface_coordinator = Path(sys.argv[7])
 
 replace_if_missing(
     ntp,
@@ -258,12 +260,6 @@ replace_if_missing(
     "import org.chromium.chrome.browser.tasks.ReturnToChromeUtil;\n",
     "import org.chromium.chrome.browser.tasks.ReturnToChromeUtil;\n"
     "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;\n",
-)
-replace_if_missing(
-    coordinator,
-    "import android.view.Gravity;",
-    "import android.view.DragEvent;\n",
-    "import android.view.DragEvent;\nimport android.view.Gravity;\n",
 )
 replace_if_missing(
     coordinator,
@@ -317,66 +313,6 @@ replace_if_missing(
      * @return The fake search box view.
      */
     """,
-)
-replace_if_missing(
-    coordinator,
-    "updateNtpTilesPositionForToolbar();",
-    "        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);\n",
-    """        mModel.set(NewTabPageLayoutProperties.TOP_INSET_PX, toolbarTopPadding + mTopInset);
-        updateNtpTilesPositionForToolbar();
-""",
-)
-replace_if_missing(
-    coordinator,
-    "private void updateNtpTilesPositionForToolbar()",
-    """    /**
-     * @return The fake search box view.
-""",
-    """    // Helium: the NTP tiles belong above a bottom toolbar, not below the status bar.
-    private void updateNtpTilesPositionForToolbar() {
-        boolean bottomToolbar =
-                !mIsTablet && !AddressBarPreference.isToolbarConfiguredToShowOnTop();
-        View spacer = mNewTabPageLayout.findViewById(R.id.no_search_logo_spacer);
-        if (spacer != null) {
-            spacer.setVisibility(bottomToolbar ? View.GONE : View.VISIBLE);
-        }
-        mNewTabPageLayout.setGravity(
-                bottomToolbar ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.CENTER);
-
-        View parent = mNewTabPageLayout.getParent() instanceof View
-                ? (View) mNewTabPageLayout.getParent()
-                : null;
-        int toolbarHeight =
-                mActivity.getResources().getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
-        int minimumHeight =
-                bottomToolbar && parent != null
-                        ? Math.max(parent.getHeight() - toolbarHeight, 0)
-                        : 0;
-        mNewTabPageLayout.setMinimumHeight(minimumHeight);
-
-        ViewGroup.LayoutParams layoutParams = mNewTabPageLayout.getLayoutParams();
-        if (layoutParams != null) {
-            int desiredHeight =
-                    bottomToolbar
-                            ? ViewGroup.LayoutParams.MATCH_PARENT
-                            : ViewGroup.LayoutParams.WRAP_CONTENT;
-            if (layoutParams.height != desiredHeight) {
-                layoutParams.height = desiredHeight;
-                mNewTabPageLayout.setLayoutParams(layoutParams);
-            }
-        }
-    }
-
-    /**
-     * @return The fake search box view.
-    """,
-)
-replace_if_missing(
-    coordinator,
-    "updateNtpTilesPositionForToolbar();\n        onUrlFocusAnimationChanged();",
-    "        onUrlFocusAnimationChanged();\n",
-    "        updateNtpTilesPositionForToolbar();\n"
-    "        onUrlFocusAnimationChanged();\n",
 )
 replace_if_missing(
     coordinator,
@@ -818,6 +754,136 @@ replace_if_missing(
                         controlsPosition == ControlsPosition.BOTTOM);
 """,
 )
+
+# NewTabPageLayout is a RecyclerView header, so MATCH_PARENT on the header is
+# measured as content height. Insert a real adapter spacer before the NTP header
+# to place the tiles immediately above a bottom toolbar.
+replace_if_missing(
+    feed_surface_coordinator,
+    "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;",
+    "import org.chromium.chrome.browser.toolbar.top.Toolbar;\n",
+    "import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;\n"
+    "import org.chromium.chrome.browser.toolbar.top.Toolbar;\n",
+)
+replace_if_missing(
+    feed_surface_coordinator,
+    "private final View mBottomToolbarNtpSpacer;",
+    "    private final View mHeaderView;\n",
+    "    private final View mHeaderView;\n"
+    "    private final View mBottomToolbarNtpSpacer;\n",
+)
+replace_if_missing(
+    feed_surface_coordinator,
+    "mBottomToolbarNtpSpacer = new View(mActivity);",
+    "        mNtpHeader = ntpHeader;\n",
+    """        mNtpHeader = ntpHeader;
+        mBottomToolbarNtpSpacer = new View(mActivity);
+        mBottomToolbarNtpSpacer.setLayoutParams(
+                new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0));
+        if (mNtpHeader != null) {
+            mNtpHeader.addOnLayoutChangeListener(
+                    (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                            updateBottomToolbarNtpSpacerHeight());
+        }
+""",
+)
+replace_if_missing(
+    feed_surface_coordinator,
+    "// Helium: update the spacer when the Feed viewport changes.",
+    """            super.onSizeChanged(width, height, oldWidth, oldHeight);
+""",
+    """            super.onSizeChanged(width, height, oldWidth, oldHeight);
+            // Helium: update the spacer when the Feed viewport changes.
+            updateBottomToolbarNtpSpacerHeight();
+""",
+)
+replace_if_missing(
+    feed_surface_coordinator,
+    "private void addNtpHeaderViews(List<View> headers)",
+    """    /**
+     * Configures header views and properties for feed: Adds the feed headers, creates the feed
+""",
+    """    private boolean shouldPlaceNtpHeaderAboveBottomToolbar() {
+        return mNtpHeader != null
+                && !AddressBarPreference.isToolbarConfiguredToShowOnTop();
+    }
+
+    private void updateBottomToolbarNtpSpacerHeight() {
+        ViewGroup.LayoutParams params = mBottomToolbarNtpSpacer.getLayoutParams();
+        if (params == null) return;
+
+        int spacerHeight = 0;
+        if (shouldPlaceNtpHeaderAboveBottomToolbar()) {
+            int toolbarHeight =
+                    mActivity
+                            .getResources()
+                            .getDimensionPixelSize(R.dimen.toolbar_height_no_shadow);
+            int headerHeight = mNtpHeader == null ? 0 : mNtpHeader.getMeasuredHeight();
+            spacerHeight =
+                    Math.max(
+                            mRootView.getHeight()
+                                    - mRootView.getPaddingTop()
+                                    - toolbarHeight
+                                    - headerHeight,
+                            0);
+        }
+        if (params.height == spacerHeight) return;
+        params.height = spacerHeight;
+        mBottomToolbarNtpSpacer.setLayoutParams(params);
+    }
+
+    private void addNtpHeaderViews(List<View> headers) {
+        if (mNtpHeader == null) return;
+        if (shouldPlaceNtpHeaderAboveBottomToolbar()) {
+            updateBottomToolbarNtpSpacerHeight();
+            headers.add(mBottomToolbarNtpSpacer);
+        }
+        headers.add(mNtpHeader);
+    }
+
+    /**
+     * Configures header views and properties for feed: Adds the feed headers, creates the feed
+""",
+)
+replace_if_missing(
+    feed_surface_coordinator,
+    "addNtpHeaderViews(headerList);",
+    """        if (mNtpHeader != null) {
+            headerList.add(mNtpHeader);
+        }
+""",
+    """        addNtpHeaderViews(headerList);
+""",
+)
+replace_if_missing(
+    feed_surface_coordinator,
+    "addNtpHeaderViews(headers);",
+    """        if (mNtpHeader != null) {
+            headers.add(mNtpHeader);
+        }
+""",
+    """        addNtpHeaderViews(headers);
+""",
+)
+
+# Remove the ineffective header-local gravity workaround from sources patched
+# by 13386a9. The adapter spacer above is the authoritative positioning logic.
+coordinator_text = coordinator.read_text()
+helper_start = coordinator_text.find(
+    "    // Helium: the NTP tiles belong above a bottom toolbar, not below the status bar.\n"
+)
+if helper_start >= 0:
+    helper_end = coordinator_text.find(
+        "    /**\n     * @return The fake search box view.\n", helper_start
+    )
+    if helper_end < 0:
+        raise SystemExit(f"NTP tile workaround end marker not found in {coordinator}")
+    coordinator_text = coordinator_text[:helper_start] + coordinator_text[helper_end:]
+coordinator_text = coordinator_text.replace(
+    "        updateNtpTilesPositionForToolbar();\n", ""
+)
+coordinator_text = coordinator_text.replace("import android.view.Gravity;\n", "")
+coordinator.write_text(coordinator_text)
 PYCODE
 
 if version_lt "$CHROMIUM_VERSION" "151.0.7922.0"; then
