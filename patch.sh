@@ -848,18 +848,21 @@ perl -0pi -e 's|\n        if \(mProfile\.shutdownStarted\(\)\) \{\n            r
 perl -0pi -e 'if (!/void setActiveWebContents\(\n\s+long nativeExtensionsToolbarAndroid,/) { s|(\n        void executeUserAction\(\n                long nativeExtensionsToolbarAndroid,)|\n        void setActiveWebContents(\n                long nativeExtensionsToolbarAndroid,\n                \@Nullable \@JniType("content::WebContents*") WebContents webContents);\n$1| }' "$TOOLBAR_BRIDGE"
 python3 - "$ACTION_LIST_MEDIATOR" <<'PYCODE'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-needle = "private @Nullable WebContents getCurrentWebContents() {"
+signature = re.compile(
+    r"(?m)^[ \t]*(?:private[ \t]+)?@Nullable[ \t]+WebContents[ \t]+"
+    r"getCurrentWebContents\(\)[ \t]*\{"
+)
 while True:
-    pos = text.find(needle)
-    if pos < 0:
+    match = signature.search(text)
+    if match is None:
         break
-    start = text.rfind("\n", 0, pos)
-    start = 0 if start < 0 else start
-    brace = text.find("{", pos)
+    start = text.rfind("\n", 0, match.start()) + 1
+    brace = text.find("{", match.start(), match.end())
     depth = 0
     end = None
     for idx in range(brace, len(text)):
@@ -869,36 +872,45 @@ while True:
             depth -= 1
             if depth <= 0:
                 end = idx + 1
-                while end < len(text) and text[end] in " \t\r\n":
+                while end < len(text) and text[end] in "\r\n":
                     end += 1
                 break
     if end is None:
-        break
-    text = text[:start].rstrip() + "\n\n" + text[end:]
+        raise SystemExit(f"unterminated getCurrentWebContents helper in {path}")
+    text = text[:start] + text[end:]
+
+helper = """    private @Nullable WebContents getCurrentWebContents() {
+        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();
+        if (incognitoTab != null
+                && incognitoTab.getWebContents() != null
+                && (mTabModelSelector.isOffTheRecordModelSelected()
+                        || incognitoTab.isUserInteractable()
+                        || incognitoTab.isActivated())) {
+            return incognitoTab.getWebContents();
+        }
+        Tab currentTab = mTabModelSelector.getCurrentTab();
+        if (currentTab != null && currentTab.getWebContents() != null) {
+            return currentTab.getWebContents();
+        }
+        Tab suppliedTab = mCurrentTabSupplier.get();
+        if (suppliedTab != null && suppliedTab.getWebContents() != null) {
+            return suppliedTab.getWebContents();
+        }
+        return incognitoTab != null ? incognitoTab.getWebContents() : null;
+    }
+
+"""
+anchor = re.search(
+    r"(?m)^    (?:private )?void updateActionPropertiesForAll\(WebContents webContents\) \{$",
+    text,
+)
+if anchor is None:
+    raise SystemExit(f"updateActionPropertiesForAll insertion anchor not found in {path}")
+text = text[:anchor.start()] + helper + text[anchor.start():]
+if len(signature.findall(text)) != 1:
+    raise SystemExit(f"expected exactly one getCurrentWebContents helper in {path}")
 path.write_text(text)
 PYCODE
-grep -q 'private @Nullable WebContents getCurrentWebContents()' "$ACTION_LIST_MEDIATOR" || sed -i '/private void updateActionPropertiesForAll(WebContents webContents) {/i\
-    private @Nullable WebContents getCurrentWebContents() {\
-        Tab incognitoTab = mTabModelSelector.getModel(true).getCurrentTabSupplier().get();\
-        if (incognitoTab != null\
-                && incognitoTab.getWebContents() != null\
-                && (mTabModelSelector.isOffTheRecordModelSelected()\
-                        || incognitoTab.isUserInteractable()\
-                        || incognitoTab.isActivated())) {\
-            return incognitoTab.getWebContents();\
-        }\
-        Tab currentTab = mTabModelSelector.getCurrentTab();\
-        if (currentTab != null && currentTab.getWebContents() != null) {\
-            return currentTab.getWebContents();\
-        }\
-        Tab suppliedTab = mCurrentTabSupplier.get();\
-        if (suppliedTab != null && suppliedTab.getWebContents() != null) {\
-            return suppliedTab.getWebContents();\
-        }\
-        return incognitoTab != null ? incognitoTab.getWebContents() : null;\
-    }\
-\
-' "$ACTION_LIST_MEDIATOR"
 perl -0pi -e 's|Tab currentTab = mCurrentTabSupplier\.get\(\);\n        WebContents webContents = currentTab != null \? currentTab\.getWebContents\(\) : null;|WebContents webContents = getCurrentWebContents();|g' "$ACTION_LIST_MEDIATOR"
 grep -q 'mExtensionsToolbarBridge.setActiveWebContents(getCurrentWebContents());' "$ACTION_LIST_MEDIATOR" || perl -0pi -e 's|(\n    public void executeUserAction\(String actionId, \@InvocationSource int source\) \{\n)|$1        mExtensionsToolbarBridge.setActiveWebContents(getCurrentWebContents());\n|' "$ACTION_LIST_MEDIATOR"
 grep -q 'SetActiveWebContents' "$TOOLBAR_ANDROID_H" || perl -0pi -e 's|(  void ExecuteUserAction\(const ToolbarActionsModel::ActionId& action_id,\n                         ToolbarActionViewModel::InvocationSource source\);\n)|  void SetActiveWebContents(JNIEnv* env, content::WebContents* web_contents);\n$1|' "$TOOLBAR_ANDROID_H"
