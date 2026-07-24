@@ -10,6 +10,14 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
+# Load optional local GitHub CLI credentials without putting a token in this
+# tracked script. gh recognizes GH_TOKEN and GITHUB_TOKEN automatically.
+RELEASE_ENV_FILE="${RELEASE_ENV_FILE:-$SCRIPT_DIR/.codex/github.env}"
+if [ -f "$RELEASE_ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$RELEASE_ENV_FILE"
+fi
+
 if [ -z "${TAG:-}" ]; then
     git -C "$SCRIPT_DIR" fetch origin '+refs/tags/*:refs/tags/*' >/dev/null 2>&1 || true
     head_tags=$(git -C "$SCRIPT_DIR" tag --points-at HEAD --list "v$VERSION*" | sort -V)
