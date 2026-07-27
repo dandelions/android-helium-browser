@@ -314,7 +314,7 @@ sed -i 's|BASE_FEATURE(kOmniboxSiteSearch, DISABLED);|BASE_FEATURE(kOmniboxSiteS
 # playback
 sed -i 's|#if BUILDFLAG(IS_ANDROID)|#if 0|' content/public/renderer/render_frame_media_playback_options.cc
 
-# Keep both the renderer viewport and popup window inside the Android display.
+# Proportionally scale extension popups that are wider than the display.
 python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_ACTION_POPUP" \
     "$EXTENSION_POPUP_CONTENTS" \

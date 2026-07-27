@@ -64,7 +64,7 @@ java_text = replace_if_missing(
     "public void setMaxWidth(int maxWidth)",
     "    /**\n"
     "     * Instructs to load the initial page for the extension popup into its {@link WebContents}.\n",
-    "    /** Sets the maximum popup content width in device-independent pixels. */\n"
+    "    /** Sets the maximum displayed popup width in device-independent pixels. */\n"
     "    public void setMaxWidth(int maxWidth) {\n"
     "        assert mNativeExtensionActionPopupContents != 0;\n"
     "        ExtensionActionPopupContentsJni.get()\n"
@@ -79,11 +79,21 @@ java_text = replace_if_missing(
     "long nativeExtensionActionPopupContents, int maxWidth);",
     "        /**\n"
     "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
-    "        /** Sets the maximum content width in device-independent pixels. */\n"
+    "        /** Sets the maximum displayed popup width in device-independent pixels. */\n"
     "        void setMaxWidth(\n"
     "                long nativeExtensionActionPopupContents, int maxWidth);\n\n"
     "        /**\n"
     "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
+)
+java_text = java_text.replace(
+    "Sets the maximum popup content width in device-independent pixels.",
+    "Sets the maximum displayed popup width in device-independent pixels.",
+    1,
+)
+java_text = java_text.replace(
+    "Sets the maximum content width in device-independent pixels.",
+    "Sets the maximum displayed popup width in device-independent pixels.",
+    1,
 )
 
 header_text = native_header.read_text()
@@ -101,8 +111,13 @@ header_text = replace_if_missing(
     "int max_width_ = 800;",
     "  std::unique_ptr<ExtensionViewHost> host_;\n",
     "  std::unique_ptr<ExtensionViewHost> host_;\n"
-    "  // Maximum content width in CSS/device-independent pixels.\n"
+    "  // Maximum displayed popup width in device-independent pixels.\n"
     "  int max_width_ = 800;\n",
+)
+header_text = header_text.replace(
+    "  // Maximum content width in CSS/device-independent pixels.\n",
+    "  // Maximum displayed popup width in device-independent pixels.\n",
+    1,
 )
 native_text = native_contents.read_text()
 if "#include <algorithm>" not in native_text:
@@ -110,21 +125,16 @@ if "#include <algorithm>" not in native_text:
     if anchor not in native_text:
         raise SystemExit(f"Extension popup include anchor not found in {native_contents}")
     native_text = native_text.replace(anchor, anchor + "\n#include <algorithm>\n", 1)
+if "#include <cmath>" not in native_text:
+    native_text = native_text.replace(
+        "#include <algorithm>\n", "#include <algorithm>\n#include <cmath>\n", 1
+    )
 native_text = native_text.replace(
     "constexpr gfx::Size kMinSize = {25, 25};",
     "constexpr gfx::Size kMinSize = {256, 25};",
     1,
 )
-native_text = replace_if_missing(
-    native_contents,
-    native_text,
-    "void ExtensionActionPopupContents::SetMaxWidth(",
-    "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
-    "  host_->CreateRendererSoon();\n"
-    "}\n",
-    "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
-    "  host_->CreateRendererSoon();\n"
-    "}\n\n"
+old_set_max_width = (
     "void ExtensionActionPopupContents::SetMaxWidth(JNIEnv* env, int max_width) {\n"
     "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
     "  RenderFrameHost* main_frame =\n"
@@ -132,22 +142,74 @@ native_text = replace_if_missing(
     "  if (main_frame->IsRenderFrameLive()) {\n"
     "    SetUpNewMainFrame(main_frame);\n"
     "  }\n"
+    "}\n"
+)
+new_set_max_width = (
+    "void ExtensionActionPopupContents::SetMaxWidth(JNIEnv* env, int max_width) {\n"
+    "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
+    "}\n"
+)
+native_text = native_text.replace(old_set_max_width, new_set_max_width, 1)
+native_text = replace_if_missing(
+    native_contents,
+    native_text,
+    new_set_max_width,
+    "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
+    "  host_->CreateRendererSoon();\n"
     "}\n",
+    "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
+    "  host_->CreateRendererSoon();\n"
+    "}\n\n"
+    + new_set_max_width,
+)
+old_resize = (
+    "void ExtensionActionPopupContents::ResizeDueToAutoResize(\n"
+    "    content::WebContents* web_contents,\n"
+    "    const gfx::Size& new_size) {\n"
+    "  Java_ExtensionActionPopupContents_resizeDueToAutoResize(\n"
+    "      AttachCurrentThread(), java_object_, new_size.width(), new_size.height());\n"
+    "}\n"
+)
+new_resize = (
+    "void ExtensionActionPopupContents::ResizeDueToAutoResize(\n"
+    "    content::WebContents* web_contents,\n"
+    "    const gfx::Size& new_size) {\n"
+    "  const float scale =\n"
+    "      new_size.width() > max_width_\n"
+    "          ? static_cast<float>(max_width_) / new_size.width()\n"
+    "          : 1.0f;\n"
+    "  web_contents->SetPageScale(scale);\n"
+    "  const int popup_width = std::max(\n"
+    "      1, static_cast<int>(std::lround(new_size.width() * scale)));\n"
+    "  const int popup_height = std::max(\n"
+    "      1, static_cast<int>(std::lround(new_size.height() * scale)));\n"
+    "  Java_ExtensionActionPopupContents_resizeDueToAutoResize(\n"
+    "      AttachCurrentThread(), java_object_, popup_width, popup_height);\n"
+    "}\n"
 )
 native_text = replace_if_missing(
     native_contents,
     native_text,
-    "EnableAutoResize(min_size, max_size);",
-    "  render_frame_host->GetView()->EnableAutoResize(kMinSize, kMaxSize);\n",
+    "web_contents->SetPageScale(scale);",
+    old_resize,
+    new_resize,
+)
+old_auto_resize = (
     "  const gfx::Size max_size(max_width_, kMaxSize.height());\n"
     "  const gfx::Size min_size(std::min(kMinSize.width(), max_width_),\n"
     "                           kMinSize.height());\n"
-    "  render_frame_host->GetView()->EnableAutoResize(min_size, max_size);\n",
+    "  render_frame_host->GetView()->EnableAutoResize(min_size, max_size);\n"
+)
+native_text = native_text.replace(
+    old_auto_resize,
+    "  render_frame_host->GetView()->EnableAutoResize(kMinSize, kMaxSize);\n",
+    1,
 )
 required = (
     "constexpr gfx::Size kMinSize = {256, 25};",
-    "void ExtensionActionPopupContents::SetMaxWidth(",
-    "EnableAutoResize(min_size, max_size);",
+    new_set_max_width,
+    "web_contents->SetPageScale(scale);",
+    "EnableAutoResize(kMinSize, kMaxSize);",
 )
 for marker in required:
     if marker not in native_text:

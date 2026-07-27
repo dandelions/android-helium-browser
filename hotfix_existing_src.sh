@@ -137,7 +137,7 @@ if [ -z "$TARGET_VERSION" ] || [ "$CHROMIUM_VERSION" != "$TARGET_VERSION" ]; the
 fi
 echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
 
-# Keep both the renderer viewport and popup window inside the Android display.
+# Proportionally scale extension popups that are wider than the display.
 python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_ACTION_POPUP" \
     "$EXTENSION_POPUP_CONTENTS" \
