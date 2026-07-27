@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+
 mkdir -p chrome/android/java/res_helium_base
 for icon in $(find chrome/android/java/res_helium_base -type f -name '*.png'); do convert $icon -fill navy -tint 36 $icon; done
 sed -i 's|<application |<application android:extractNativeLibs="false" |' chrome/android/java/AndroidManifest.xml
@@ -138,6 +140,10 @@ TOOLBAR_ANDROID_H=chrome/browser/ui/android/extensions/extensions_toolbar_androi
 ACTION_DELEGATE_CC=chrome/browser/ui/android/extensions/extension_action_delegate_android.cc
 ACTION_DELEGATE_H=chrome/browser/ui/android/extensions/extension_action_delegate_android.h
 ACTION_LIST_MEDIATOR=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListMediator.java
+EXTENSION_ACTION_POPUP=chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionPopup.java
+EXTENSION_POPUP_CONTENTS=chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java
+EXTENSION_POPUP_CONTENTS_CC=chrome/browser/ui/android/extensions/extension_action_popup_contents.cc
+EXTENSION_POPUP_CONTENTS_H=chrome/browser/ui/android/extensions/extension_action_popup_contents.h
 EXTENSION_ACTION_VIEW_MODEL=chrome/browser/ui/extensions/extension_action_view_model.cc
 TABS_API_CC=chrome/browser/extensions/api/tabs/tabs_api.cc
 TABS_EVENT_ROUTER_CC=chrome/browser/extensions/api/tabs/tabs_event_router.cc
@@ -308,8 +314,14 @@ sed -i 's|BASE_FEATURE(kOmniboxSiteSearch, DISABLED);|BASE_FEATURE(kOmniboxSiteS
 # playback
 sed -i 's|#if BUILDFLAG(IS_ANDROID)|#if 0|' content/public/renderer/render_frame_media_playback_options.cc
 
+# Keep both the renderer viewport and popup window inside the Android display.
+python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
+    "$EXTENSION_ACTION_POPUP" \
+    "$EXTENSION_POPUP_CONTENTS" \
+    "$EXTENSION_POPUP_CONTENTS_CC" \
+    "$EXTENSION_POPUP_CONTENTS_H"
+
 # viewport
-sed -i 's|constexpr gfx::Size kMinSize = {25, 25};|constexpr gfx::Size kMinSize = {256, 25};|' chrome/browser/ui/android/extensions/extension_action_popup_contents.cc
 sed -i 's|<meta name="color-scheme" content="light dark">|&\n<meta name="viewport" content="width=device-width">|' chrome/browser/resources/extensions/extensions.html
 sed -i 's|height: calc(var(--md-toolbar-height) + 58px);|height: calc(var(--md-toolbar-height) + 104px);|' chrome/browser/resources/extensions/extensions.html
 sed -i 's|--extensions-card-width: 400px;|--extensions-card-width: 96%;|' chrome/browser/resources/extensions/item_list.css # card width
