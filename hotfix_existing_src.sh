@@ -137,7 +137,7 @@ if [ -z "$TARGET_VERSION" ] || [ "$CHROMIUM_VERSION" != "$TARGET_VERSION" ]; the
 fi
 echo "Applying local hotfixes to Chromium $CHROMIUM_VERSION in $SRC_DIR"
 
-# Proportionally scale extension popups that are wider than the display.
+# Proportionally scale extension popups to the space outside the toolbar.
 python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_ACTION_POPUP" \
     "$EXTENSION_POPUP_CONTENTS" \

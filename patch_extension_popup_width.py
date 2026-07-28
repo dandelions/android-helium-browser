@@ -28,17 +28,24 @@ popup_text = popup.read_text()
 popup_text = replace_if_missing(
     popup,
     popup_text,
+    "import android.graphics.Rect;",
+    "import android.graphics.Color;\n",
+    "import android.graphics.Color;\nimport android.graphics.Rect;\n",
+)
+popup_text = popup_text.replace(
+    "import android.graphics.drawable.ColorDrawable;\nimport android.graphics.Rect;\n",
+    "import android.graphics.Rect;\nimport android.graphics.drawable.ColorDrawable;\n",
+    1,
+)
+popup_text = replace_if_missing(
+    popup,
+    popup_text,
     "private static final int POPUP_EDGE_MARGIN_DP = 8;",
     "class ExtensionActionPopup implements Destroyable {\n",
     "class ExtensionActionPopup implements Destroyable {\n"
     "    private static final int POPUP_EDGE_MARGIN_DP = 8;\n",
 )
-popup_text = replace_if_missing(
-    popup,
-    popup_text,
-    "mContents.setMaxWidth(maxContentWidthDp);",
-    "        Resources resources = mActivity.getResources();\n"
-    "        mPopupWindow.setElevation(\n",
+old_popup_size = (
     "        Resources resources = mActivity.getResources();\n"
     "        int popupMarginPx = ViewUtils.dpToPx(mActivity, POPUP_EDGE_MARGIN_DP);\n"
     "        View rootView = mActivity.getWindow().getDecorView();\n"
@@ -55,68 +62,143 @@ popup_text = replace_if_missing(
     "                        1);\n"
     "        mContents.setMaxWidth(maxContentWidthDp);\n"
     "        mPopupWindow.setMargin(popupMarginPx);\n"
+    "        mPopupWindow.setElevation(\n"
+)
+new_popup_size = (
+    "        Resources resources = mActivity.getResources();\n"
+    "        int popupMarginPx = ViewUtils.dpToPx(mActivity, POPUP_EDGE_MARGIN_DP);\n"
+    "        View rootView = mActivity.getWindow().getDecorView();\n"
+    "        Rect visibleWindowRect = new Rect();\n"
+    "        rootView.getWindowVisibleDisplayFrame(visibleWindowRect);\n"
+    "        int[] rootLocationOnScreen = new int[2];\n"
+    "        rootView.getLocationOnScreen(rootLocationOnScreen);\n"
+    "        visibleWindowRect.offset(-rootLocationOnScreen[0], -rootLocationOnScreen[1]);\n"
+    "        if (visibleWindowRect.isEmpty()) {\n"
+    "            int rootWidthPx =\n"
+    "                    rootView.getWidth() > 0\n"
+    "                            ? rootView.getWidth()\n"
+    "                            : resources.getDisplayMetrics().widthPixels;\n"
+    "            int rootHeightPx =\n"
+    "                    rootView.getHeight() > 0\n"
+    "                            ? rootView.getHeight()\n"
+    "                            : resources.getDisplayMetrics().heightPixels;\n"
+    "            visibleWindowRect.set(0, 0, rootWidthPx, rootHeightPx);\n"
+    "        }\n"
+    "        int[] rootLocationInWindow = new int[2];\n"
+    "        int[] anchorLocationInWindow = new int[2];\n"
+    "        rootView.getLocationInWindow(rootLocationInWindow);\n"
+    "        anchorView.getLocationInWindow(anchorLocationInWindow);\n"
+    "        int anchorTopPx = anchorLocationInWindow[1] - rootLocationInWindow[1];\n"
+    "        int anchorBottomPx = anchorTopPx + anchorView.getHeight();\n"
+    "        int availableAbovePx = anchorTopPx - visibleWindowRect.top - popupMarginPx;\n"
+    "        int availableBelowPx = visibleWindowRect.bottom - anchorBottomPx - popupMarginPx;\n"
+    "        int maxContentWidthPx =\n"
+    "                Math.max(visibleWindowRect.width() - 2 * popupMarginPx, 1);\n"
+    "        int maxContentHeightPx =\n"
+    "                Math.max(Math.max(availableAbovePx, availableBelowPx), 1);\n"
+    "        float density = resources.getDisplayMetrics().density;\n"
+    "        int maxContentWidthDp = Math.max((int) (maxContentWidthPx / density), 1);\n"
+    "        int maxContentHeightDp = Math.max((int) (maxContentHeightPx / density), 1);\n"
+    "        mContents.setMaxSize(maxContentWidthDp, maxContentHeightDp);\n"
+    "        mPopupWindow.setMargin(popupMarginPx);\n"
+    "        mPopupWindow.setElevation(\n"
+)
+popup_text = popup_text.replace(old_popup_size, new_popup_size, 1)
+popup_text = replace_if_missing(
+    popup,
+    popup_text,
+    "mContents.setMaxSize(maxContentWidthDp, maxContentHeightDp);",
+    "        Resources resources = mActivity.getResources();\n"
     "        mPopupWindow.setElevation(\n",
+    new_popup_size,
 )
 java_text = java_contents.read_text()
-java_text = replace_if_missing(
-    java_contents,
-    java_text,
-    "public void setMaxWidth(int maxWidth)",
-    "    /**\n"
-    "     * Instructs to load the initial page for the extension popup into its {@link WebContents}.\n",
+old_java_set_max_width = (
     "    /** Sets the maximum displayed popup width in device-independent pixels. */\n"
     "    public void setMaxWidth(int maxWidth) {\n"
     "        assert mNativeExtensionActionPopupContents != 0;\n"
     "        ExtensionActionPopupContentsJni.get()\n"
     "                .setMaxWidth(mNativeExtensionActionPopupContents, maxWidth);\n"
-    "    }\n\n"
-    "    /**\n"
-    "     * Instructs to load the initial page for the extension popup into its {@link WebContents}.\n",
+    "    }\n"
 )
+new_java_set_max_size = (
+    "    /** Sets the maximum displayed popup size in device-independent pixels. */\n"
+    "    public void setMaxSize(int maxWidth, int maxHeight) {\n"
+    "        assert mNativeExtensionActionPopupContents != 0;\n"
+    "        ExtensionActionPopupContentsJni.get()\n"
+    "                .setMaxSize(mNativeExtensionActionPopupContents, maxWidth, maxHeight);\n"
+    "    }\n"
+)
+java_text = java_text.replace(old_java_set_max_width, new_java_set_max_size, 1)
 java_text = replace_if_missing(
     java_contents,
     java_text,
-    "long nativeExtensionActionPopupContents, int maxWidth);",
-    "        /**\n"
-    "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
+    "public void setMaxSize(int maxWidth, int maxHeight)",
+    "    /**\n"
+    "     * Instructs to load the initial page for the extension popup into its {@link WebContents}.\n",
+    new_java_set_max_size
+    + "\n"
+    "    /**\n"
+    "     * Instructs to load the initial page for the extension popup into its {@link WebContents}.\n",
+)
+old_jni_set_max_width = (
     "        /** Sets the maximum displayed popup width in device-independent pixels. */\n"
     "        void setMaxWidth(\n"
-    "                long nativeExtensionActionPopupContents, int maxWidth);\n\n"
+    "                long nativeExtensionActionPopupContents, int maxWidth);\n"
+)
+new_jni_set_max_size = (
+    "        /** Sets the maximum displayed popup size in device-independent pixels. */\n"
+    "        void setMaxSize(\n"
+    "                long nativeExtensionActionPopupContents, int maxWidth, int maxHeight);\n"
+)
+java_text = java_text.replace(old_jni_set_max_width, new_jni_set_max_size, 1)
+java_text = replace_if_missing(
+    java_contents,
+    java_text,
+    "long nativeExtensionActionPopupContents, int maxWidth, int maxHeight);",
     "        /**\n"
     "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
-)
-java_text = java_text.replace(
-    "Sets the maximum popup content width in device-independent pixels.",
-    "Sets the maximum displayed popup width in device-independent pixels.",
-    1,
-)
-java_text = java_text.replace(
-    "Sets the maximum content width in device-independent pixels.",
-    "Sets the maximum displayed popup width in device-independent pixels.",
-    1,
+    new_jni_set_max_size
+    + "\n"
+    "        /**\n"
+    "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
 )
 
 header_text = native_header.read_text()
-header_text = replace_if_missing(
-    native_header,
-    header_text,
-    "void SetMaxWidth(JNIEnv* env, int max_width);",
-    "  void LoadInitialPage(JNIEnv* env);\n",
-    "  void LoadInitialPage(JNIEnv* env);\n\n"
+header_text = header_text.replace(
     "  void SetMaxWidth(JNIEnv* env, int max_width);\n",
+    "  void SetMaxSize(JNIEnv* env, int max_width, int max_height);\n",
+    1,
 )
 header_text = replace_if_missing(
     native_header,
     header_text,
-    "int max_width_ = 800;",
+    "void SetMaxSize(JNIEnv* env, int max_width, int max_height);",
+    "  void LoadInitialPage(JNIEnv* env);\n",
+    "  void LoadInitialPage(JNIEnv* env);\n\n"
+    "  void SetMaxSize(JNIEnv* env, int max_width, int max_height);\n",
+)
+old_header_size = (
+    "  // Maximum displayed popup width in device-independent pixels.\n"
+    "  int max_width_ = 800;\n"
+)
+new_header_size = (
+    "  // Maximum displayed popup size in device-independent pixels.\n"
+    "  int max_width_ = 800;\n"
+    "  int max_height_ = 600;\n"
+)
+header_text = header_text.replace(old_header_size, new_header_size, 1)
+header_text = replace_if_missing(
+    native_header,
+    header_text,
+    "int max_height_ = 600;",
     "  std::unique_ptr<ExtensionViewHost> host_;\n",
     "  std::unique_ptr<ExtensionViewHost> host_;\n"
-    "  // Maximum displayed popup width in device-independent pixels.\n"
-    "  int max_width_ = 800;\n",
+    + new_header_size,
 )
 header_text = header_text.replace(
     "  // Maximum content width in CSS/device-independent pixels.\n",
-    "  // Maximum displayed popup width in device-independent pixels.\n",
+    "  // Maximum displayed popup size in device-independent pixels.\n",
     1,
 )
 native_text = native_contents.read_text()
@@ -134,7 +216,7 @@ native_text = native_text.replace(
     "constexpr gfx::Size kMinSize = {256, 25};",
     1,
 )
-old_set_max_width = (
+old_set_max_width_with_frame = (
     "void ExtensionActionPopupContents::SetMaxWidth(JNIEnv* env, int max_width) {\n"
     "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
     "  RenderFrameHost* main_frame =\n"
@@ -144,23 +226,33 @@ old_set_max_width = (
     "  }\n"
     "}\n"
 )
-new_set_max_width = (
+old_set_max_width = (
     "void ExtensionActionPopupContents::SetMaxWidth(JNIEnv* env, int max_width) {\n"
     "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
     "}\n"
 )
-native_text = native_text.replace(old_set_max_width, new_set_max_width, 1)
+new_set_max_size = (
+    "void ExtensionActionPopupContents::SetMaxSize(\n"
+    "    JNIEnv* env,\n"
+    "    int max_width,\n"
+    "    int max_height) {\n"
+    "  max_width_ = std::clamp(max_width, 1, kMaxSize.width());\n"
+    "  max_height_ = std::clamp(max_height, 1, kMaxSize.height());\n"
+    "}\n"
+)
+native_text = native_text.replace(old_set_max_width_with_frame, new_set_max_size, 1)
+native_text = native_text.replace(old_set_max_width, new_set_max_size, 1)
 native_text = replace_if_missing(
     native_contents,
     native_text,
-    new_set_max_width,
+    new_set_max_size,
     "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
     "  host_->CreateRendererSoon();\n"
     "}\n",
     "void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {\n"
     "  host_->CreateRendererSoon();\n"
     "}\n\n"
-    + new_set_max_width,
+    + new_set_max_size,
 )
 old_resize = (
     "void ExtensionActionPopupContents::ResizeDueToAutoResize(\n"
@@ -170,7 +262,7 @@ old_resize = (
     "      AttachCurrentThread(), java_object_, new_size.width(), new_size.height());\n"
     "}\n"
 )
-new_resize = (
+old_scaled_resize = (
     "void ExtensionActionPopupContents::ResizeDueToAutoResize(\n"
     "    content::WebContents* web_contents,\n"
     "    const gfx::Size& new_size) {\n"
@@ -187,10 +279,29 @@ new_resize = (
     "      AttachCurrentThread(), java_object_, popup_width, popup_height);\n"
     "}\n"
 )
+new_resize = (
+    "void ExtensionActionPopupContents::ResizeDueToAutoResize(\n"
+    "    content::WebContents* web_contents,\n"
+    "    const gfx::Size& new_size) {\n"
+    "  const float width_scale =\n"
+    "      static_cast<float>(max_width_) / new_size.width();\n"
+    "  const float height_scale =\n"
+    "      static_cast<float>(max_height_) / new_size.height();\n"
+    "  const float scale = std::min({1.0f, width_scale, height_scale});\n"
+    "  web_contents->SetPageScale(scale);\n"
+    "  const int popup_width = std::max(\n"
+    "      1, static_cast<int>(std::lround(new_size.width() * scale)));\n"
+    "  const int popup_height = std::max(\n"
+    "      1, static_cast<int>(std::lround(new_size.height() * scale)));\n"
+    "  Java_ExtensionActionPopupContents_resizeDueToAutoResize(\n"
+    "      AttachCurrentThread(), java_object_, popup_width, popup_height);\n"
+    "}\n"
+)
+native_text = native_text.replace(old_scaled_resize, new_resize, 1)
 native_text = replace_if_missing(
     native_contents,
     native_text,
-    "web_contents->SetPageScale(scale);",
+    "const float height_scale =",
     old_resize,
     new_resize,
 )
@@ -207,8 +318,8 @@ native_text = native_text.replace(
 )
 required = (
     "constexpr gfx::Size kMinSize = {256, 25};",
-    new_set_max_width,
-    "web_contents->SetPageScale(scale);",
+    new_set_max_size,
+    "const float scale = std::min({1.0f, width_scale, height_scale});",
     "EnableAutoResize(kMinSize, kMaxSize);",
 )
 for marker in required:

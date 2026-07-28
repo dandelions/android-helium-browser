@@ -314,7 +314,7 @@ sed -i 's|BASE_FEATURE(kOmniboxSiteSearch, DISABLED);|BASE_FEATURE(kOmniboxSiteS
 # playback
 sed -i 's|#if BUILDFLAG(IS_ANDROID)|#if 0|' content/public/renderer/render_frame_media_playback_options.cc
 
-# Proportionally scale extension popups that are wider than the display.
+# Proportionally scale extension popups to the space outside the toolbar.
 python3 "$SCRIPT_DIR/patch_extension_popup_width.py" \
     "$EXTENSION_ACTION_POPUP" \
     "$EXTENSION_POPUP_CONTENTS" \
