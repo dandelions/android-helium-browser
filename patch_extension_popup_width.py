@@ -28,6 +28,13 @@ popup_text = popup.read_text()
 popup_text = replace_if_missing(
     popup,
     popup_text,
+    "import android.content.Context;",
+    "import android.app.Activity;\n",
+    "import android.app.Activity;\nimport android.content.Context;\n",
+)
+popup_text = replace_if_missing(
+    popup,
+    popup_text,
     "import android.graphics.Rect;",
     "import android.graphics.Color;\n",
     "import android.graphics.Color;\nimport android.graphics.Rect;\n",
@@ -36,6 +43,13 @@ popup_text = popup_text.replace(
     "import android.graphics.drawable.ColorDrawable;\nimport android.graphics.Rect;\n",
     "import android.graphics.Rect;\nimport android.graphics.drawable.ColorDrawable;\n",
     1,
+)
+popup_text = replace_if_missing(
+    popup,
+    popup_text,
+    "import android.widget.FrameLayout;",
+    "import android.widget.PopupWindow.OnDismissListener;\n",
+    "import android.widget.FrameLayout;\nimport android.widget.PopupWindow.OnDismissListener;\n",
 )
 popup_text = replace_if_missing(
     popup,
@@ -112,6 +126,134 @@ popup_text = replace_if_missing(
     "        mPopupWindow.setElevation(\n",
     new_popup_size,
 )
+popup_text = replace_if_missing(
+    popup,
+    popup_text,
+    "private final ScaledContentView mScaledContentView;",
+    "    private final ThinWebView mThinWebView;\n",
+    "    private final ThinWebView mThinWebView;\n\n"
+    "    /** Keeps the renderer at its original size while displaying it proportionally scaled. */\n"
+    "    private final ScaledContentView mScaledContentView;\n",
+)
+popup_text = replace_if_missing(
+    popup,
+    popup_text,
+    "mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());",
+    "        mPopupWindow =\n"
+    "                new AnchoredPopupWindow(\n"
+    "                        activity,\n"
+    "                        activity.getWindow().getDecorView(),\n"
+    "                        new ColorDrawable(Color.WHITE),\n"
+    "                        mThinWebView.getView(),\n"
+    "                        new ViewRectProvider(anchorView));\n",
+    "        mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());\n"
+    "        mPopupWindow =\n"
+    "                new AnchoredPopupWindow(\n"
+    "                        activity,\n"
+    "                        activity.getWindow().getDecorView(),\n"
+    "                        new ColorDrawable(Color.WHITE),\n"
+    "                        mScaledContentView,\n"
+    "                        new ViewRectProvider(anchorView));\n",
+)
+old_initial_size = (
+    "        // Set the content size to the minimum initially.\n"
+    "        mPopupWindow.setDesiredContentSize(\n"
+    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_width),\n"
+    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_height));\n"
+)
+new_initial_size = (
+    "        // Set the content size to the minimum initially.\n"
+    "        int initialWidthPx =\n"
+    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_width);\n"
+    "        int initialHeightPx =\n"
+    "                resources.getDimensionPixelSize(R.dimen.extension_action_popup_min_height);\n"
+    "        mScaledContentView.setContentSize(initialWidthPx, initialHeightPx, 1.0f);\n"
+    "        mPopupWindow.setDesiredContentSize(initialWidthPx, initialHeightPx);\n"
+)
+popup_text = popup_text.replace(old_initial_size, new_initial_size, 1)
+old_resize_delegate = (
+    "        public void resizeDueToAutoResize(int width, int height) {\n"
+    "            if (Build.VERSION.SDK_INT >= 34) {\n"
+    "                // Disable transition animations for the popup window. On Android, {@link\n"
+    "                // onLoaded()} is called first, and then {@link resizeDueToAutoResize()} is called.\n"
+    "                // A transition would result in a sliding animation from the original bounds to the\n"
+    "                // updated bounds.\n"
+    "                // TODO(crbug.com/478100096): Figure out what to do for lower API levels.\n"
+    "                ((WindowManager.LayoutParams) mContentView.getRootView().getLayoutParams())\n"
+    "                        .setCanPlayMoveAnimation(false);\n"
+    "            }\n\n"
+    "            mPopupWindow.setDesiredContentSize(\n"
+    "                    ViewUtils.dpToPx(mActivity, width), ViewUtils.dpToPx(mActivity, height));\n"
+    "        }\n"
+)
+new_resize_delegate = (
+    "        public void resizeDueToAutoResize(int width, int height, float scale) {\n"
+    "            if (Build.VERSION.SDK_INT >= 34) {\n"
+    "                // Disable transition animations for the popup window. On Android, {@link\n"
+    "                // onLoaded()} is called first, and then {@link resizeDueToAutoResize()} is called.\n"
+    "                // A transition would result in a sliding animation from the original bounds to the\n"
+    "                // updated bounds.\n"
+    "                // TODO(crbug.com/478100096): Figure out what to do for lower API levels.\n"
+    "                ((WindowManager.LayoutParams) mContentView.getRootView().getLayoutParams())\n"
+    "                        .setCanPlayMoveAnimation(false);\n"
+    "            }\n\n"
+    "            int contentWidthPx = ViewUtils.dpToPx(mActivity, width);\n"
+    "            int contentHeightPx = ViewUtils.dpToPx(mActivity, height);\n"
+    "            mScaledContentView.setContentSize(contentWidthPx, contentHeightPx, scale);\n"
+    "            mPopupWindow.setDesiredContentSize(\n"
+    "                    Math.max(Math.round(contentWidthPx * scale), 1),\n"
+    "                    Math.max(Math.round(contentHeightPx * scale), 1));\n"
+    "        }\n"
+)
+popup_text = popup_text.replace(old_resize_delegate, new_resize_delegate, 1)
+scaled_content_view = (
+    "    private static class ScaledContentView extends FrameLayout {\n"
+    "        private final View mChildView;\n"
+    "        private int mContentWidthPx = 1;\n"
+    "        private int mContentHeightPx = 1;\n"
+    "        private float mScale = 1.0f;\n\n"
+    "        ScaledContentView(Context context, View childView) {\n"
+    "            super(context);\n"
+    "            mChildView = childView;\n"
+    "            mChildView.setPivotX(0.0f);\n"
+    "            mChildView.setPivotY(0.0f);\n"
+    "            addView(mChildView, new FrameLayout.LayoutParams(1, 1));\n"
+    "        }\n\n"
+    "        void setContentSize(int widthPx, int heightPx, float scale) {\n"
+    "            mContentWidthPx = Math.max(widthPx, 1);\n"
+    "            mContentHeightPx = Math.max(heightPx, 1);\n"
+    "            mScale = Math.min(Math.max(scale, 0.01f), 1.0f);\n"
+    "            mChildView.setScaleX(mScale);\n"
+    "            mChildView.setScaleY(mScale);\n"
+    "            requestLayout();\n"
+    "        }\n\n"
+    "        @Override\n"
+    "        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {\n"
+    "            mChildView.measure(\n"
+    "                    View.MeasureSpec.makeMeasureSpec(\n"
+    "                            mContentWidthPx, View.MeasureSpec.EXACTLY),\n"
+    "                    View.MeasureSpec.makeMeasureSpec(\n"
+    "                            mContentHeightPx, View.MeasureSpec.EXACTLY));\n"
+    "            int scaledWidthPx = Math.max(Math.round(mContentWidthPx * mScale), 1);\n"
+    "            int scaledHeightPx = Math.max(Math.round(mContentHeightPx * mScale), 1);\n"
+    "            setMeasuredDimension(\n"
+    "                    resolveSize(scaledWidthPx, widthMeasureSpec),\n"
+    "                    resolveSize(scaledHeightPx, heightMeasureSpec));\n"
+    "        }\n\n"
+    "        @Override\n"
+    "        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {\n"
+    "            mChildView.layout(0, 0, mContentWidthPx, mContentHeightPx);\n"
+    "        }\n"
+    "    }\n\n"
+)
+popup_text = replace_if_missing(
+    popup,
+    popup_text,
+    "private static class ScaledContentView extends FrameLayout",
+    "    private class ContentsDelegate implements ExtensionActionPopupContents.Delegate {\n",
+    scaled_content_view
+    + "    private class ContentsDelegate implements ExtensionActionPopupContents.Delegate {\n",
+)
 java_text = java_contents.read_text()
 old_java_set_max_width = (
     "    /** Sets the maximum displayed popup width in device-independent pixels. */\n"
@@ -162,6 +304,30 @@ java_text = replace_if_missing(
     + "\n"
     "        /**\n"
     "         * Triggers the loading of the initial URL in the native ExtensionActionPopupContents.\n",
+)
+old_java_resize_callback = (
+    "    @CalledByNative\n"
+    "    private void resizeDueToAutoResize(int width, int height) {\n"
+    "        if (mDelegate != null) {\n"
+    "            mDelegate.resizeDueToAutoResize(width, height);\n"
+    "        }\n"
+    "    }\n"
+)
+new_java_resize_callback = (
+    "    @CalledByNative\n"
+    "    private void resizeDueToAutoResize(int width, int height, float scale) {\n"
+    "        if (mDelegate != null) {\n"
+    "            mDelegate.resizeDueToAutoResize(width, height, scale);\n"
+    "        }\n"
+    "    }\n"
+)
+java_text = java_text.replace(old_java_resize_callback, new_java_resize_callback, 1)
+java_text = replace_if_missing(
+    java_contents,
+    java_text,
+    "void resizeDueToAutoResize(int width, int height, float scale);",
+    "        void resizeDueToAutoResize(int width, int height);\n",
+    "        void resizeDueToAutoResize(int width, int height, float scale);\n",
 )
 
 header_text = native_header.read_text()
@@ -305,6 +471,22 @@ native_text = replace_if_missing(
     old_resize,
     new_resize,
 )
+view_scaled_resize = (
+    "void ExtensionActionPopupContents::ResizeDueToAutoResize(\n"
+    "    content::WebContents* web_contents,\n"
+    "    const gfx::Size& new_size) {\n"
+    "  const float width_scale =\n"
+    "      static_cast<float>(max_width_) / new_size.width();\n"
+    "  const float height_scale =\n"
+    "      static_cast<float>(max_height_) / new_size.height();\n"
+    "  const float scale = std::min({1.0f, width_scale, height_scale});\n"
+    "  Java_ExtensionActionPopupContents_resizeDueToAutoResize(\n"
+    "      AttachCurrentThread(), java_object_, new_size.width(), new_size.height(),\n"
+    "      scale);\n"
+    "}\n"
+)
+native_text = native_text.replace(new_resize, view_scaled_resize, 1)
+native_text = native_text.replace("#include <cmath>\n", "", 1)
 old_auto_resize = (
     "  const gfx::Size max_size(max_width_, kMaxSize.height());\n"
     "  const gfx::Size min_size(std::min(kMinSize.width(), max_width_),\n"
@@ -319,12 +501,38 @@ native_text = native_text.replace(
 required = (
     "constexpr gfx::Size kMinSize = {256, 25};",
     new_set_max_size,
-    "const float scale = std::min({1.0f, width_scale, height_scale});",
+    "new_size.height(),\n      scale);",
     "EnableAutoResize(kMinSize, kMaxSize);",
 )
 for marker in required:
     if marker not in native_text:
         raise SystemExit(f"Extension popup width marker missing in {native_contents}: {marker}")
+if "SetPageScale(scale)" in native_text:
+    raise SystemExit(f"Renderer page scaling was not removed from {native_contents}")
+
+required_outputs = (
+    (
+        popup,
+        popup_text,
+        (
+            "private static class ScaledContentView extends FrameLayout",
+            "mScaledContentView = new ScaledContentView(activity, mThinWebView.getView());",
+            "resizeDueToAutoResize(int width, int height, float scale)",
+        ),
+    ),
+    (
+        java_contents,
+        java_text,
+        (
+            "private void resizeDueToAutoResize(int width, int height, float scale)",
+            "void resizeDueToAutoResize(int width, int height, float scale);",
+        ),
+    ),
+)
+for path, text, markers in required_outputs:
+    for marker in markers:
+        if marker not in text:
+            raise SystemExit(f"Extension popup view scaling marker missing in {path}: {marker}")
 
 popup.write_text(popup_text)
 java_contents.write_text(java_text)
